@@ -49,17 +49,17 @@
     if(b && b.dataset && b.dataset.collector) return b.dataset.collector;
     const p = location.pathname.split('/').pop() || '';
     const map = {
-      'sw-cache.html':'collect_serviceworker_and_cache_behavior',
-      'os-files.html':'collect_os_files_and_cache',
-      'gpu-info.html':'collect_gpu_and_useragent',
-      'perf-audio.html':'collect_perf_and_offline_audio',
-      'css-dommatrix.html':'collect_css_typed_and_dommatrix',
-      'crypto-text.html':'collect_crypto_and_text_behavior',
-      'error-signatures.html':'collect_error_message_signatures',
-      'permissions.html':'collect_permissions_geolocation_notifications',
-      'features.html':'collect_feature_flags',
-      'media-file.html':'collect_media_and_file_selection_demo',
-      'input-clipboard.html':'collect_input_and_clipboard_demo'
+      'cache.html':'collect_serviceworker_and_cache_behavior',
+      'os.html':'collect_os_files_and_cache',
+      'gpu.html':'collect_gpu_and_useragent',
+      'perf.html':'collect_perf_and_offline_audio',
+      'dommatrix.html':'collect_css_typed_and_dommatrix',
+      'text.html':'collect_crypto_and_text_behavior',
+      'error.html':'collect_error_message_signatures',
+      'permission.html':'collect_permissions_geolocation_notifications',
+      'feature.html':'collect_feature_flags',
+      'media.html':'collect_media_and_file_selection_demo',
+      'user.html':'collect_input_and_clipboard_demo'
     };
     return map[p] || null;
   })();
