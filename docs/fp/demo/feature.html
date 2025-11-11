@@ -2,38 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Runtime Feature Detection</title>
+  <title>Feature Flag Detection</title>
   <link rel="stylesheet" href="../styles.css">
-  <style>
-    body { padding: 1em; }
-    pre { background:#f6f8fa; padding:1em; border:1px solid #ddd; border-radius:6px; }
-    #status.loading { color:#0066cc; }
-    button { margin:0.4em 0.4em 0.4em 0; }
-  </style>
+  <style>body{padding:1em;} pre{background:#f6f8fa;padding:1em;border:1px solid #ddd;border-radius:6px;}</style>
 </head>
 <body>
-<header>
-  <h1>Runtime Feature Detection</h1>
-  <p>Detects WebGPU, WebTransport, and ML API support</p>
-  <p><a href="../index.html">← Back to Home</a></p>
-</header>
-
-<section>
-  <div id="status" class="loading">Ready</div>
-  <div style="margin-top:10px;">
-    <button id="refresh" data-collector="collect_feature_flags">Run Collector</button>
-  </div>
-  <div id="output" style="margin-top:20px;"></div>
-</section>
-
-<script src="fp-demo.js"></script>
-<script src="fp-summary.js"></script>
-<script>
-  document.getElementById('refresh').addEventListener('click', () => {
-    if (window.fpDemo?.collect_feature_flags) {
-      window.fpDemo.collect_feature_flags();
-    }
-  });
-</script>
+<h1>Runtime Feature Fingerprinting</h1>
+<p>Shows availability of experimental features such as WebGPU, WebTransport, and ML APIs.</p>
+<div id="status" class="loading">Ready</div>
+<button id="refresh" data-collector="collect_feature_flags">Run Collector</button>
+<button id="copy">Copy JSON</button>
+<div id="output"></div>
+<script src="../fp.js"></script>
 </body>
 </html>

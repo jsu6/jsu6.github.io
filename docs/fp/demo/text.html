@@ -4,36 +4,15 @@
   <meta charset="utf-8">
   <title>Crypto & Text Behavior</title>
   <link rel="stylesheet" href="../styles.css">
-  <style>
-    body { padding: 1em; }
-    pre { background:#f6f8fa; padding:1em; border:1px solid #ddd; border-radius:6px; }
-    #status.loading { color:#0066cc; }
-    button { margin:0.4em 0.4em 0.4em 0; }
-  </style>
+  <style>body{padding:1em;} pre{background:#f6f8fa;padding:1em;border:1px solid #ddd;border-radius:6px;}</style>
 </head>
 <body>
-<header>
-  <h1>Crypto & Text Behavior</h1>
-  <p>Shows presence of SubtleCrypto and TextEncoder APIs</p>
-  <p><a href="../index.html">← Back to Home</a></p>
-</header>
-
-<section>
-  <div id="status" class="loading">Ready</div>
-  <div style="margin-top:10px;">
-    <button id="refresh" data-collector="collect_crypto_and_text_behavior">Run Collector</button>
-  </div>
-  <div id="output" style="margin-top:20px;"></div>
-</section>
-
-<script src="fp-demo.js"></script>
-<script src="fp-summary.js"></script>
-<script>
-  document.getElementById('refresh').addEventListener('click', () => {
-    if (window.fpDemo?.collect_crypto_and_text_behavior) {
-      window.fpDemo.collect_crypto_and_text_behavior();
-    }
-  });
-</script>
+<h1>Crypto & Text Fingerprinting</h1>
+<p>Shows SubtleCrypto hashing time and encoding/decoding round-trip metrics.</p>
+<div id="status" class="loading">Ready</div>
+<button id="refresh" data-collector="collect_crypto_and_text_behavior">Run Collector</button>
+<button id="copy">Copy JSON</button>
+<div id="output"></div>
+<script src="../fp.js"></script>
 </body>
 </html>

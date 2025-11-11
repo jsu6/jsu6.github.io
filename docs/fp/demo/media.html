@@ -4,36 +4,15 @@
   <meta charset="utf-8">
   <title>Media & File Selection</title>
   <link rel="stylesheet" href="../styles.css">
-  <style>
-    body { padding: 1em; }
-    pre { background:#f6f8fa; padding:1em; border:1px solid #ddd; border-radius:6px; }
-    #status.loading { color:#0066cc; }
-    button { margin:0.4em 0.4em 0.4em 0; }
-  </style>
+  <style>body{padding:1em;} pre{background:#f6f8fa;padding:1em;border:1px solid #ddd;border-radius:6px;}</style>
 </head>
 <body>
-<header>
-  <h1>Media & File Selection</h1>
-  <p>Shows if ImageCapture and File Picker APIs are supported</p>
-  <p><a href="../index.html">← Back to Home</a></p>
-</header>
-
-<section>
-  <div id="status" class="loading">Ready</div>
-  <div style="margin-top:10px;">
-    <button id="refresh" data-collector="collect_media_and_file_selection_demo">Run Collector</button>
-  </div>
-  <div id="output" style="margin-top:20px;"></div>
-</section>
-
-<script src="fp-demo.js"></script>
-<script src="fp-summary.js"></script>
-<script>
-  document.getElementById('refresh').addEventListener('click', () => {
-    if (window.fpDemo?.collect_media_and_file_selection_demo) {
-      window.fpDemo.collect_media_and_file_selection_demo();
-    }
-  });
-</script>
+<h1>Media & File Selection Fingerprinting</h1>
+<p>Shows ImageCapture and File Picker support to reveal platform-specific differences.</p>
+<div id="status" class="loading">Ready</div>
+<button id="refresh" data-collector="collect_media_and_file_selection_demo">Run Collector</button>
+<button id="copy">Copy JSON</button>
+<div id="output"></div>
+<script src="../fp.js"></script>
 </body>
 </html>
