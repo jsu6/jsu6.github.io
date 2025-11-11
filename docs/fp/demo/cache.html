@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>API Experiment</title>
+  <title>Service Worker & Cache Behavior</title>
   <link rel="stylesheet" href="../styles.css">
   <style>
     body { padding: 1em; }
@@ -13,8 +13,8 @@
 </head>
 <body>
 <header>
-  <h1>API Experiment</h1>
-  <p>Runs one local collector for educational analysis only</p>
+  <h1>Service Worker & Cache Behavior</h1>
+  <p>Displays ServiceWorker and CacheStorage presence</p>
   <p><a href="../index.html">← Back to Home</a></p>
 </header>
 
@@ -28,9 +28,10 @@
 </section>
 
 <script src="fp-demo.js"></script>
+<script src="fp-summary.js"></script>
 <script>
   document.getElementById('refresh').addEventListener('click', () => {
-    if (window.fpDemo?.collect_gpu_and_useragent) {
+    if (window.fpDemo?.collect_serviceworker_and_cache_behavior) {
       window.fpDemo.collect_serviceworker_and_cache_behavior();
     }
   });

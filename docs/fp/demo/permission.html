@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>API Experiment</title>
+  <title>Permissions Summary</title>
   <link rel="stylesheet" href="../styles.css">
   <style>
     body { padding: 1em; }
@@ -13,8 +13,8 @@
 </head>
 <body>
 <header>
-  <h1>API Experiment</h1>
-  <p>Runs one local collector for educational analysis only</p>
+  <h1>Permissions Summary</h1>
+  <p>Checks browser permission states for geolocation and notifications</p>
   <p><a href="../index.html">← Back to Home</a></p>
 </header>
 
@@ -28,6 +28,7 @@
 </section>
 
 <script src="fp-demo.js"></script>
+<script src="fp-summary.js"></script>
 <script>
   document.getElementById('refresh').addEventListener('click', () => {
     if (window.fpDemo?.collect_permissions_geolocation_notifications) {
