@@ -31,7 +31,7 @@
       }
 
       try {
-        const info = await adapter.requestAdapterInfo(); // will work only with flags
+        const info = await adapter.info(); // will work only with flags
         const result = {
           architecture: info.architecture,
           backend: info.backend,
