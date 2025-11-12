@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BackgroundFetchRegistration.failureReason Demo</title>
+  <style>
+    body { font-family: monospace; background:#f7f7f7; padding:1.5em; }
+    pre { background:white; padding:1em; border-radius:8px; }
+    button { padding: .4em .8em; margin-top:.8em; }
+  </style>
+</head>
+<body>
+  <h2>BackgroundFetchRegistration.failureReason</h2>
+  <div id="output"><pre>Loading...</pre></div>
+  <button id="show">Show Failure Reasons</button>
+
+  <script>
+    const output = document.getElementById('output');
+    const showBtn = document.getElementById('show');
+
+    const possibleReasons = {
+      "": "The background fetch has not completed, or was successful.",
+      "aborted": "Operation cancelled by user or abort() was called.",
+      "bad-status": "Response had a not-ok status (not 200–299).",
+      "fetch-error": "Fetch failed (e.g. CORS or network failure).",
+      "quota-exceeded": "Storage quota was reached during the operation.",
+      "download-total-exceeded": "Download total limit exceeded."
+    };
+
+    function showFailureReasons() {
+      if (!('backgroundFetch' in navigator.serviceWorker)) {
+        output.innerHTML = `<pre>Background Fetch API not supported in this browser.</pre>`;
+        return;
+      }
+
+      let text = 'All possible BackgroundFetchRegistration.failureReason values:\n\n';
+      for (const [key, desc] of Object.entries(possibleReasons)) {
+        text += `${key === "" ? "(empty string)" : key} → ${desc}\n`;
+      }
+
+      output.innerHTML = `<pre>${text}</pre>`;
+    }
+
+    showBtn.addEventListener('click', showFailureReasons);
+
+    // Initial info
+    output.innerHTML = `<pre>Click "Show Failure Reasons" to list all possible values.
+Browser support: Chrome (desktop/android) behind flag, Edge (experimental).
+</pre>`;
+  </script>
+</body>
+</html>
