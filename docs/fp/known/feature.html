@@ -2,85 +2,52 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>GPUAdapterInfo Test</title>
+  <title>GPUAdapterInfo Full Access Test</title>
   <style>
-    body { font-family: sans-serif; margin: 2em; }
-    pre {
-      background: #f5f5f5;
-      padding: 1em;
-      border-radius: 8px;
-      min-height: 7rem;
-      line-height: 1.5;
-    }
-    button { padding: 0.5em 1em; font-size: 1em; }
-    .error { color: #b00020; }
+    body { font-family: monospace; margin: 2em; background: #f9f9f9; }
+    pre { background: #fff; border: 1px solid #ccc; padding: 1em; border-radius: 8px; }
+    button { padding: 0.6em 1em; font-size: 1em; margin-bottom: 1em; }
   </style>
 </head>
 <body>
-  <h1>GPUAdapterInfo Test</h1>
-  <button id="fetch">Get GPU Info</button>
-  <pre id="output">Click to query...</pre>
+  <h1>GPUAdapterInfo (Full Developer Access)</h1>
+  <button id="fetch">Query GPU Info</button>
+  <pre id="output">Waiting for query...</pre>
 
   <script>
-    const output = document.getElementById('output');
-    const fields = [
-      { key: 'architecture', label: 'Architecture' },
-      { key: 'description', label: 'Description' },
-      { key: 'device', label: 'Device' },
-      { key: 'vendor', label: 'Vendor' },
-    ];
-
-    function renderLines(lines) {
-      output.classList.remove('error');
-      output.textContent = lines.map(([label, value]) => `${label}: ${value}`).join('\n');
-    }
-
     async function getGPUInfo() {
-      output.classList.remove('error');
-      output.textContent = "Querying GPU adapter…";
+      const out = document.getElementById('output');
+      out.textContent = 'Querying...';
 
-      if (!('gpu' in navigator)) {
-        output.classList.add('error');
-        output.textContent = "WebGPU (navigator.gpu) is not supported in this browser.";
+      if (!navigator.gpu) {
+        out.textContent = 'WebGPU not supported.';
+        return;
+      }
+
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        out.textContent = 'No adapter found.';
         return;
       }
 
       try {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-          output.classList.add('error');
-          output.textContent = "navigator.gpu.requestAdapter() returned null.";
-          return;
-        }
-
-        if (typeof adapter.requestAdapterInfo !== 'function') {
-          output.classList.add('error');
-          output.textContent = "GPUAdapter.requestAdapterInfo() is not available in this browser build.";
-          return;
-        }
-
-        let info;
-        try {
-          // Request unmasked fields; browsers that require additional isolation will throw.
-          info = await adapter.requestAdapterInfo({
-            unmaskHints: ['architecture', 'description', 'device', 'vendor'],
-          });
-        } catch (err) {
-          console.warn('requestAdapterInfo with hints failed, retrying without hints:', err);
-          info = await adapter.requestAdapterInfo();
-        }
-
-        if (!info) {
-          output.classList.add('error');
-          output.textContent = "GPUAdapterInfo could not be retrieved.";
-          return;
-        }
-
-        const lines = fields.map(({ label, key }) => [label, info[key] || 'Unavailable']);
-        renderLines(lines);
-      } catch (err) {
-        output.classList.add('error');
-        output.textContent = "Error while querying GPU info: " + (err?.message || err);
+        const info = await adapter.requestAdapterInfo(); // will work only with flags
+        const result = {
+          architecture: info.architecture,
+          backend: info.backend,
+          description: info.description,
+          device: info.device,
+          vendor: info.vendor,
+          driver: info.driver,
+          d3dShaderModel: info.d3dShaderModel,
+          powerPreference: info.powerPreference,
+          isFallbackAdapter: info.isFallbackAdapter,
+          subgroupMinSize: info.subgroupMinSize,
+          subgroupMaxSize: info.subgroupMaxSize,
+        };
+        out.textContent = JSON.stringify(result, null, 2);
+      } catch (e) {
+        out.textContent = 'Failed to query adapter info.\n\n' + e;
       }
     }
 
