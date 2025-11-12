@@ -5,8 +5,15 @@
   <title>GPUAdapterInfo Test</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
-    pre { background: #f5f5f5; padding: 1em; border-radius: 8px; }
+    pre {
+      background: #f5f5f5;
+      padding: 1em;
+      border-radius: 8px;
+      min-height: 7rem;
+      line-height: 1.5;
+    }
     button { padding: 0.5em 1em; font-size: 1em; }
+    .error { color: #b00020; }
   </style>
 </head>
 <body>
@@ -15,45 +22,65 @@
   <pre id="output">Click to query...</pre>
 
   <script>
+    const output = document.getElementById('output');
+    const fields = [
+      { key: 'architecture', label: 'Architecture' },
+      { key: 'description', label: 'Description' },
+      { key: 'device', label: 'Device' },
+      { key: 'vendor', label: 'Vendor' },
+    ];
+
+    function renderLines(lines) {
+      output.classList.remove('error');
+      output.textContent = lines.map(([label, value]) => `${label}: ${value}`).join('\n');
+    }
+
     async function getGPUInfo() {
-      const output = document.getElementById('output');
-      output.textContent = "Querying...";
+      output.classList.remove('error');
+      output.textContent = "Querying GPU adapter…";
 
       if (!('gpu' in navigator)) {
-        output.textContent = "WebGPU not supported in this browser.";
+        output.classList.add('error');
+        output.textContent = "WebGPU (navigator.gpu) is not supported in this browser.";
         return;
       }
 
       try {
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) {
-          output.textContent = "No GPU adapter found.";
+          output.classList.add('error');
+          output.textContent = "navigator.gpu.requestAdapter() returned null.";
           return;
         }
 
-        let info = null;
-
-        // Chromium DeveloperFeatures only
-        if (adapter.requestAdapterInfo) {
-          try {
-            info = await adapter.requestAdapterInfo();
-          } catch (err) {
-            console.warn("requestAdapterInfo threw:", err);
-          }
+        if (typeof adapter.requestAdapterInfo !== 'function') {
+          output.classList.add('error');
+          output.textContent = "GPUAdapter.requestAdapterInfo() is not available in this browser build.";
+          return;
         }
 
-        const result = {
-          supported: !!info,
-          architecture: info?.architecture || "N/A",
-          description: info?.description || adapter.name || "N/A",
-          device: info?.device || "N/A",
-          vendor: info?.vendor || "N/A",
-          backend: adapter?.features ? Array.from(adapter.features) : []
-        };
+        let info;
+        try {
+          // Request unmasked fields; browsers that require additional isolation will throw.
+          info = await adapter.requestAdapterInfo({
+            unmaskHints: ['architecture', 'description', 'device', 'vendor'],
+          });
+        } catch (err) {
+          console.warn('requestAdapterInfo with hints failed, retrying without hints:', err);
+          info = await adapter.requestAdapterInfo();
+        }
 
-        output.textContent = JSON.stringify(result, null, 2);
+        if (!info) {
+          output.classList.add('error');
+          output.textContent = "GPUAdapterInfo could not be retrieved.";
+          return;
+        }
+
+        const lines = fields.map(({ label, key }) => [label, info[key] || 'Unavailable']);
+        renderLines(lines);
       } catch (err) {
-        output.textContent = "Error: " + err;
+        output.classList.add('error');
+        output.textContent = "Error while querying GPU info: " + (err?.message || err);
       }
     }
 
