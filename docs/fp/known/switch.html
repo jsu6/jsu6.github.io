@@ -1,0 +1,177 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Canvas compositeOperation fingerprint PoC</title>
+<style>
+  body { font-family: system-ui, -apple-system, Arial; padding: 18px; }
+  table { border-collapse: collapse; margin-top: 12px; }
+  td, th { border: 1px solid #ddd; padding: 6px 10px; font-family: monospace; }
+  canvas { image-rendering: pixelated; border: 1px solid #ccc; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:8px; }
+</style>
+
+<h1>Canvas globalCompositeOperation fingerprint demo</h1>
+<p>Draws the same scene using different composite modes, reads pixels and computes a hash.</p>
+
+<div class="row">
+  <button id="run">Run test</button>
+  <label><input id="showCanvas" type="checkbox" checked> show preview</label>
+</div>
+
+<div id="preview"></div>
+
+<table id="results">
+  <thead><tr><th>compositeOp</th><th>hex hash (SHA-256 of raw RGBA)</th><th>dataURL</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<script>
+const ops = [
+  "source-over","source-in","source-out","source-atop",
+  "destination-over","destination-in","destination-out","destination-atop",
+  "lighter","copy","xor",
+  "multiply","screen","overlay","darken","lighten","color-dodge","color-burn",
+  "hard-light","soft-light","difference","exclusion","hue","saturation","color","luminosity"
+];
+
+const runBtn = document.getElementById('run');
+const showCanvasCheckbox = document.getElementById('showCanvas');
+const preview = document.getElementById('preview');
+const tbody = document.querySelector('#results tbody');
+
+function makeCanvas(w=200,h=200){
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.style.width = (w*1.5)+'px';
+  c.style.height = (h*1.5)+'px';
+  return c;
+}
+
+function drawScene(ctx){
+  // deterministic drawing: background + two overlapping shapes + text
+  ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
+  // background gradient
+  const g = ctx.createLinearGradient(0,0,ctx.canvas.width,ctx.canvas.height);
+  g.addColorStop(0, '#0e4'); g.addColorStop(1, '#04a');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,ctx.canvas.width, ctx.canvas.height);
+
+  // draw semi-transparent red rectangle
+  ctx.fillStyle = 'rgba(255, 80, 60, 0.72)';
+  ctx.fillRect(20, 20, 140, 110);
+
+  // draw semi-transparent blue circle overlapping
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(40, 120, 255, 0.66)';
+  ctx.arc(120, 110, 64, 0, Math.PI * 2);
+  ctx.fill();
+
+  // draw thin stroked green diagonal
+  ctx.strokeStyle = 'rgba(20,200,100,0.9)';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(10, 180);
+  ctx.lineTo(190, 30);
+  ctx.stroke();
+
+  // draw text with a consistent font
+  ctx.font = '16px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText('composite test', 22, 180);
+}
+
+// compute SHA-256 of Uint8Array, return hex string
+async function sha256Hex(uint8arr){
+  const hash = await crypto.subtle.digest('SHA-256', uint8arr.buffer);
+  const h8 = new Uint8Array(hash);
+  return Array.from(h8).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function testCompositeOp(op){
+  // use an offscreen canvas (or regular canvas) of fixed size
+  const c = makeCanvas(200,200);
+  const ctx = c.getContext('2d');
+
+  // deterministic: set the same composite operation for the whole scene
+  ctx.globalCompositeOperation = 'source-over';
+  // draw base scene first
+  drawScene(ctx);
+
+  // now overlay a second pass with the op we want to test
+  ctx.globalCompositeOperation = op;
+  // small transformation to create differing overlaps (but deterministic)
+  // draw the same scene shifted slightly to create overlaps impacted by composite op
+  ctx.save();
+  ctx.translate(6, 4);
+  drawScene(ctx);
+  ctx.restore();
+
+  // get raw pixel bytes (RGBA)
+  const image = ctx.getImageData(0,0, c.width, c.height).data;
+  const hash = await sha256Hex(new Uint8Array(image));
+
+  // small data URL for quick visual comparison if desired (lossy PNG)
+  const dataURL = c.toDataURL('image/png');
+
+  return {op, hash, dataURL, canvas: c};
+}
+
+async function runAll(){
+  tbody.innerHTML = '';
+  preview.innerHTML = '';
+  const results = [];
+  // run sequentially to avoid heavy parallel work and keep deterministic timing
+  for (const op of ops){
+    try {
+      const r = await testCompositeOp(op);
+      results.push(r);
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${escapeHtml(op)}</td><td>${r.hash}</td>
+        <td><a href="${r.dataURL}" target="_blank">open image</a></td>`;
+      tbody.appendChild(row);
+
+      if (showCanvasCheckbox.checked) {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'inline-block';
+        wrapper.style.margin = '6px';
+        wrapper.style.textAlign = 'center';
+        const label = document.createElement('div');
+        label.textContent = op;
+        label.style.fontSize = '11px';
+        label.style.marginBottom = '6px';
+        wrapper.appendChild(label);
+        wrapper.appendChild(r.canvas);
+        preview.appendChild(wrapper);
+      }
+    } catch (e) {
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${escapeHtml(op)}</td><td colspan=2 style="color:crimson">error: ${escapeHtml(String(e))}</td>`;
+      tbody.appendChild(row);
+    }
+  }
+  return results;
+}
+
+function escapeHtml(s){ return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+runBtn.addEventListener('click', async () => {
+  runBtn.disabled = true;
+  runBtn.textContent = 'Running…';
+  try {
+    const res = await runAll();
+    // show a quick summary of distinct hashes found
+    const uniq = new Map();
+    for (const r of res) {
+      if (!uniq.has(r.hash)) uniq.set(r.hash, []);
+      uniq.get(r.hash).push(r.op);
+    }
+    console.log('Distinct hash groups:', uniq);
+    // append a small summary row
+    const summaryRow = document.createElement('tr');
+    summaryRow.innerHTML = `<td colspan=3>Distinct hash groups: ${uniq.size} — see console for grouping</td>`;
+    tbody.appendChild(summaryRow);
+  } finally {
+    runBtn.disabled = false;
+    runBtn.textContent = 'Run test';
+  }
+});
+</script>
