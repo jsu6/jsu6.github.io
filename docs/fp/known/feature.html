@@ -2,50 +2,58 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>GPUAdapterInfo Demo</title>
+  <title>GPUAdapterInfo Test</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
-    pre { background: #f3f3f3; padding: 1em; border-radius: 8px; }
+    pre { background: #f5f5f5; padding: 1em; border-radius: 8px; }
+    button { padding: 0.5em 1em; font-size: 1em; }
   </style>
 </head>
 <body>
-  <h1>GPUAdapterInfo</h1>
+  <h1>GPUAdapterInfo Test</h1>
   <button id="fetch">Get GPU Info</button>
-  <pre id="output">Click the button to query GPUAdapterInfo...</pre>
+  <pre id="output">Click to query...</pre>
 
   <script>
     async function getGPUInfo() {
       const output = document.getElementById('output');
+      output.textContent = "Querying...";
+
       if (!('gpu' in navigator)) {
-        output.textContent = 'WebGPU not supported in this browser.';
+        output.textContent = "WebGPU not supported in this browser.";
         return;
       }
+
       try {
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) {
-          output.textContent = 'No GPU adapter found.';
+          output.textContent = "No GPU adapter found.";
           return;
         }
 
-        // Try to get adapter info (developer features must be enabled)
-        const info = await adapter.requestAdapterInfo?.();
+        let info = null;
 
-        if (!info) {
-          output.textContent = 'adapter.requestAdapterInfo() not supported.\n' +
-                               'Try enabling chrome://flags/#enable-webgpu-developer-features';
-          return;
+        // Chromium DeveloperFeatures only
+        if (adapter.requestAdapterInfo) {
+          try {
+            info = await adapter.requestAdapterInfo();
+          } catch (err) {
+            console.warn("requestAdapterInfo threw:", err);
+          }
         }
 
         const result = {
-          architecture: info.architecture,
-          description: info.description,
-          device: info.device,
-          vendor: info.vendor
+          supported: !!info,
+          architecture: info?.architecture || "N/A",
+          description: info?.description || adapter.name || "N/A",
+          device: info?.device || "N/A",
+          vendor: info?.vendor || "N/A",
+          backend: adapter?.features ? Array.from(adapter.features) : []
         };
 
         output.textContent = JSON.stringify(result, null, 2);
       } catch (err) {
-        output.textContent = 'Error: ' + err;
+        output.textContent = "Error: " + err;
       }
     }
 
