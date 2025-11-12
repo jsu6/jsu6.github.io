@@ -1,0 +1,21 @@
+<!doctype html>
+<script>
+(async () => {
+  const w = window.open('about:blank', '_blank', 'noopener=no'); // open a small popup
+  if (!w) { console.log('popup blocked'); return; }
+
+  // write something so it has a document/history
+  w.document.open();
+  w.document.write('<title>temp</title><p>temp</p>');
+  w.document.close();
+
+  // close the window (destroy browsing context)
+  w.close();
+
+  try {
+    console.log('history.length on closed window:', w.history.length);
+  } catch (e) {
+    console.error('Access threw:', e && e.name, '-', e && e.message);
+  }
+})();
+</script>
