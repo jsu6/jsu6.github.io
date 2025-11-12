@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>GPUAdapterInfo Demo</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    pre { background: #f3f3f3; padding: 1em; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>GPUAdapterInfo</h1>
+  <button id="fetch">Get GPU Info</button>
+  <pre id="output">Click the button to query GPUAdapterInfo...</pre>
+
+  <script>
+    async function getGPUInfo() {
+      const output = document.getElementById('output');
+      if (!('gpu' in navigator)) {
+        output.textContent = 'WebGPU not supported in this browser.';
+        return;
+      }
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          output.textContent = 'No GPU adapter found.';
+          return;
+        }
+
+        // Try to get adapter info (developer features must be enabled)
+        const info = await adapter.requestAdapterInfo?.();
+
+        if (!info) {
+          output.textContent = 'adapter.requestAdapterInfo() not supported.\n' +
+                               'Try enabling chrome://flags/#enable-webgpu-developer-features';
+          return;
+        }
+
+        const result = {
+          architecture: info.architecture,
+          description: info.description,
+          device: info.device,
+          vendor: info.vendor
+        };
+
+        output.textContent = JSON.stringify(result, null, 2);
+      } catch (err) {
+        output.textContent = 'Error: ' + err;
+      }
+    }
+
+    document.getElementById('fetch').addEventListener('click', getGPUInfo);
+  </script>
+</body>
+</html>
