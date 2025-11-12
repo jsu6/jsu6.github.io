@@ -1,78 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>PushManager.supportedContentEncodings Demo</title>
+  <meta charset="UTF-8">
+  <title>PushManager.supportedContentEncodings</title>
   <style>
-    body { font-family: monospace; padding: 1.5em; background: #f6f6f6; }
-    pre { background: white; padding: 1em; border-radius: 8px; box-shadow: 0 0 4px rgba(0,0,0,0.1); }
-    button { padding: 0.5em 1em; margin-top: 1em; }
+    body { font-family: monospace; padding: 1.5em; background: #f7f7f7; }
+    pre { background: white; padding: 1em; border-radius: 8px; }
   </style>
 </head>
 <body>
-  <h2>PushManager.supportedContentEncodings Demo</h2>
-  <button id="registerBtn">Register & Subscribe</button>
-  <div id="output"><pre>Waiting...</pre></div>
+  <h2>PushManager.supportedContentEncodings</h2>
+  <div id="output"><pre>Loading...</pre></div>
 
   <script>
-    async function main() {
-      const out = document.getElementById('output');
-      const log = (obj) => out.innerHTML = `<pre>${JSON.stringify(obj, null, 2)}</pre>`;
+    (function () {
+      const output = document.getElementById("output");
 
-      if (!('serviceWorker' in navigator)) {
-        log({ error: 'Service Worker not supported in this browser.' });
+      if (!("PushManager" in window)) {
+        output.innerHTML = "<pre>PushManager not supported in this browser.</pre>";
         return;
       }
 
-      if (!('PushManager' in window)) {
-        log({ error: 'PushManager API not supported in this browser.' });
-        return;
-      }
-
-      try {
-        // Register service worker
-        const reg = await navigator.serviceWorker.register('sw.js');
-        console.log('Service worker registered:', reg);
-
-        // Request permission for notifications
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          log({ error: 'Notification permission not granted.' });
-          return;
-        }
-
-        // Subscribe for push notifications
-        const subscription = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: undefined // Replace with your VAPID key for production
-        });
-
-        // Get supported encodings
-        const encodings = PushManager.supportedContentEncodings || [];
-
-        // Construct object to display
-        const subscriptionObject = {
-          endpoint: subscription.endpoint,
-          keys: {
-            p256dh: btoa(String.fromCharCode.apply(
-              null, new Uint8Array(subscription.getKey('p256dh') || []))),
-            auth: btoa(String.fromCharCode.apply(
-              null, new Uint8Array(subscription.getKey('auth') || []))),
-          },
-          encoding: encodings,
-        };
-
-        log({
-          supportedEncodings: encodings,
-          subscription: subscriptionObject
-        });
-
-      } catch (err) {
-        log({ error: err.message });
-      }
-    }
-
-    document.getElementById('registerBtn').onclick = main;
+      const encodings = PushManager.supportedContentEncodings || [];
+      output.innerHTML = `<pre>${JSON.stringify(encodings, null, 2)}</pre>`;
+    })();
   </script>
 </body>
 </html>
