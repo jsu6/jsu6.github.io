@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>DeviceOrientation Demo</title>
+  <title>DeviceOrientation Permission Demo</title>
   <style>
     body { font-family: sans-serif; padding: 2rem; }
     #status { margin-bottom: 1rem; font-weight: bold; }
@@ -11,10 +11,11 @@
   </style>
 </head>
 <body>
-  <h1>DeviceOrientationEvent</h1>
+  <h1>DeviceOrientationEvent with Permission Status</h1>
 
-  <div id="status">Click "Start" to listen for orientation.</div>
-  <button id="start">Start</button>
+  <div id="status">Checking support...</div>
+  <button id="check">Check Permission</button>
+  <button id="start">Start Listening</button>
   <button id="stop" disabled>Stop</button>
 
   <h2>Values</h2>
@@ -27,11 +28,12 @@
     const alphaEl  = document.getElementById('alpha');
     const betaEl   = document.getElementById('beta');
     const gammaEl  = document.getElementById('gamma');
+    const checkBtn = document.getElementById('check');
     const startBtn = document.getElementById('start');
     const stopBtn  = document.getElementById('stop');
 
-    let listening = false;
     let handler = null;
+    let listening = false;
 
     function setStatus(text) {
       statusEl.textContent = text;
@@ -43,37 +45,50 @@
       gammaEl.textContent = e.gamma != null ? e.gamma.toFixed(2) : 'null';
     }
 
-    function startListening() {
-      if (listening) return;
+    async function checkPermission() {
       if (typeof DeviceOrientationEvent === 'undefined') {
         setStatus('DeviceOrientationEvent not supported in this browser.');
         return;
       }
 
-      handler = function (event) {
-        updateValues(event);
-      };
-
-      // iOS requires explicit permission
       if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-        DeviceOrientationEvent.requestPermission()
-          .then(state => {
-            if (state === 'granted') {
-              window.addEventListener('deviceorientation', handler, true);
-              listening = true;
-              setStatus('Listening for deviceorientation events…');
-              startBtn.disabled = true;
-              stopBtn.disabled = false;
-            } else {
-              setStatus('Permission denied for DeviceOrientationEvent.');
-            }
-          })
-          .catch(err => {
-            setStatus('Error requesting permission: ' + err);
-          });
+        try {
+          // Check current permission state
+          const state = await navigator.permissions.query({ name: 'accelerometer' }).catch(() => null);
+          if (state) {
+            setStatus(`Permission state for motion sensors: ${state.state}`);
+            return;
+          }
+          setStatus('Permission state unavailable; will require user gesture on Start.');
+        } catch (err) {
+          setStatus('Could not check permission: ' + err);
+        }
       } else {
-        // Non-iOS browsers
-        window.addEventListener('deviceorientation', handler, true);
+        setStatus('Non-iOS browser: permission not required.');
+      }
+    }
+
+    async function startListening() {
+      if (listening) return;
+
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const result = await DeviceOrientationEvent.requestPermission();
+          if (result === 'granted') {
+            window.addEventListener('deviceorientation', handler = updateValues, true);
+            listening = true;
+            setStatus('Listening for deviceorientation events… (permission granted)');
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+          } else {
+            setStatus('Permission denied for DeviceOrientationEvent.');
+          }
+        } catch (err) {
+          setStatus('Error requesting permission: ' + err);
+        }
+      } else {
+        // No permission prompt needed (Android/desktop)
+        window.addEventListener('deviceorientation', handler = updateValues, true);
         listening = true;
         setStatus('Listening for deviceorientation events…');
         startBtn.disabled = true;
@@ -91,8 +106,11 @@
       stopBtn.disabled = true;
     }
 
+    checkBtn.addEventListener('click', checkPermission);
     startBtn.addEventListener('click', startListening);
     stopBtn.addEventListener('click', stopListening);
+
+    setStatus('Ready. Click "Check Permission" or "Start".');
   </script>
 </body>
 </html>
