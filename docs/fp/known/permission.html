@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>DeviceOrientation Permission Demo</title>
+  <title>DeviceOrientation Cross-Browser Demo</title>
   <style>
     body { font-family: sans-serif; padding: 2rem; }
     #status { margin-bottom: 1rem; font-weight: bold; }
@@ -11,7 +11,7 @@
   </style>
 </head>
 <body>
-  <h1>DeviceOrientationEvent with Permission Status</h1>
+  <h1>DeviceOrientation Cross-Browser Demo</h1>
 
   <div id="status">Checking support...</div>
   <button id="check">Check Permission</button>
@@ -34,12 +34,14 @@
 
     let handler = null;
     let listening = false;
+    let gotEvent = false;
 
     function setStatus(text) {
       statusEl.textContent = text;
     }
 
     function updateValues(e) {
+      gotEvent = true;
       alphaEl.textContent = e.alpha != null ? e.alpha.toFixed(2) : 'null';
       betaEl.textContent  = e.beta  != null ? e.beta.toFixed(2)  : 'null';
       gammaEl.textContent = e.gamma != null ? e.gamma.toFixed(2) : 'null';
@@ -51,35 +53,43 @@
         return;
       }
 
+      // Try permission API (iOS 13+)
       if (typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
-          // Check current permission state
-          const state = await navigator.permissions.query({ name: 'accelerometer' }).catch(() => null);
+          const state = await navigator.permissions
+            ?.query?.({ name: 'accelerometer' })
+            .catch(() => null);
+
           if (state) {
             setStatus(`Permission state for motion sensors: ${state.state}`);
             return;
           }
-          setStatus('Permission state unavailable; will require user gesture on Start.');
+          setStatus('Permission check unavailable — may require user gesture.');
         } catch (err) {
           setStatus('Could not check permission: ' + err);
         }
       } else {
-        setStatus('Non-iOS browser: permission not required.');
+        setStatus('Browser supports DeviceOrientation without permission prompt.');
       }
     }
 
     async function startListening() {
       if (listening) return;
 
+      gotEvent = false;
+      setStatus('Starting listener…');
+
+      if (typeof DeviceOrientationEvent === 'undefined') {
+        setStatus('DeviceOrientationEvent not supported.');
+        return;
+      }
+
+      // iOS path
       if (typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
           const result = await DeviceOrientationEvent.requestPermission();
           if (result === 'granted') {
-            window.addEventListener('deviceorientation', handler = updateValues, true);
-            listening = true;
-            setStatus('Listening for deviceorientation events… (permission granted)');
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
+            attachListener('Permission granted (iOS)');
           } else {
             setStatus('Permission denied for DeviceOrientationEvent.');
           }
@@ -87,13 +97,23 @@
           setStatus('Error requesting permission: ' + err);
         }
       } else {
-        // No permission prompt needed (Android/desktop)
-        window.addEventListener('deviceorientation', handler = updateValues, true);
-        listening = true;
-        setStatus('Listening for deviceorientation events…');
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
+        // Non-iOS (Android, desktop, etc.)
+        attachListener('Listening for events (no permission prompt)');
       }
+
+      // Fallback check if no data arrives
+      setTimeout(() => {
+        if (!gotEvent && listening)
+          setStatus('No motion data received — desktop devices may not have sensors.');
+      }, 3000);
+    }
+
+    function attachListener(msg) {
+      window.addEventListener('deviceorientation', handler = updateValues, true);
+      listening = true;
+      setStatus(msg);
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
     }
 
     function stopListening() {

@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>OfflineAudioContext Error PoC</title>
+<body>
+  <h2>OfflineAudioContext Error Demonstration</h2>
+  <p>This page triggers all known InvalidStateError and NotSupportedError messages from
+     <code>OfflineAudioContext.startRendering()</code> (a.k.a. <code>startOfflineRendering</code> internally).</p>
+  <button id="run">Run tests</button>
+  <pre id="output"></pre>
+
+  <script>
+  const out = document.getElementById('output');
+  const log = msg => out.textContent += msg + '\n';
+
+  async function test(label, fn) {
+    log(`\n=== ${label} ===`);
+    try {
+      await fn();
+      log("✅ No error (unexpected)");
+    } catch (e) {
+      log(`⚠️ ${e.name}: ${e.message}`);
+    }
+  }
+
+  document.getElementById('run').onclick = async () => {
+    out.textContent = '';
+    const sampleRate = 44100;
+    const length = 44100; // 1 second
+
+    // 1️⃣ InvalidStateError: context already closed
+    await test("Call after context closed", async () => {
+      const ctx = new OfflineAudioContext(1, length, sampleRate);
+      ctx.close(); // sets state to "closed"
+      await ctx.startRendering(); // should throw: stopped state
+    });
+
+    // 2️⃣ InvalidStateError: context not suspended (still running)
+    await test("Call when context is running", async () => {
+      const ctx = new OfflineAudioContext(1, length, sampleRate);
+      // Manually set state to "running" by starting render already
+      const p = ctx.startRendering(); // first call — ok
+      await ctx.startRendering(); // second call before finish — should throw
+      await p; // wait to avoid unhandled rejections
+    });
+
+    // 3️⃣ InvalidStateError: startRendering called twice
+    await test("Call twice on same context", async () => {
+      const ctx = new OfflineAudioContext(1, length, sampleRate);
+      await ctx.startRendering(); // first ok
+      await ctx.startRendering(); // second throws: cannot startRendering more than once
+    });
+
+    // 4️⃣ NotSupportedError: failed to create AudioBuffer
+    // (very hard to trigger in normal conditions; simulate with absurd parameters)
+    await test("AudioBuffer creation fails (NotSupportedError)", async () => {
+      const ctx = new OfflineAudioContext(100000, 1e12, sampleRate);
+      await ctx.startRendering(); // likely throws due to memory allocation failure
+    });
+
+    log("\nDone.");
+  };
+  </script>
+</body>
+</html>
