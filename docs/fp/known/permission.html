@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>DeviceOrientation Demo</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    #status { margin-bottom: 1rem; font-weight: bold; }
+    .value { font-family: monospace; }
+    button { padding: 0.5rem 1rem; margin-right: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>DeviceOrientationEvent</h1>
+
+  <div id="status">Click "Start" to listen for orientation.</div>
+  <button id="start">Start</button>
+  <button id="stop" disabled>Stop</button>
+
+  <h2>Values</h2>
+  <p>alpha (z-axis): <span id="alpha" class="value">—</span></p>
+  <p>beta (x-axis): <span id="beta" class="value">—</span></p>
+  <p>gamma (y-axis): <span id="gamma" class="value">—</span></p>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const alphaEl  = document.getElementById('alpha');
+    const betaEl   = document.getElementById('beta');
+    const gammaEl  = document.getElementById('gamma');
+    const startBtn = document.getElementById('start');
+    const stopBtn  = document.getElementById('stop');
+
+    let listening = false;
+    let handler = null;
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function updateValues(e) {
+      alphaEl.textContent = e.alpha != null ? e.alpha.toFixed(2) : 'null';
+      betaEl.textContent  = e.beta  != null ? e.beta.toFixed(2)  : 'null';
+      gammaEl.textContent = e.gamma != null ? e.gamma.toFixed(2) : 'null';
+    }
+
+    function startListening() {
+      if (listening) return;
+      if (typeof DeviceOrientationEvent === 'undefined') {
+        setStatus('DeviceOrientationEvent not supported in this browser.');
+        return;
+      }
+
+      handler = function (event) {
+        updateValues(event);
+      };
+
+      // iOS requires explicit permission
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then(state => {
+            if (state === 'granted') {
+              window.addEventListener('deviceorientation', handler, true);
+              listening = true;
+              setStatus('Listening for deviceorientation events…');
+              startBtn.disabled = true;
+              stopBtn.disabled = false;
+            } else {
+              setStatus('Permission denied for DeviceOrientationEvent.');
+            }
+          })
+          .catch(err => {
+            setStatus('Error requesting permission: ' + err);
+          });
+      } else {
+        // Non-iOS browsers
+        window.addEventListener('deviceorientation', handler, true);
+        listening = true;
+        setStatus('Listening for deviceorientation events…');
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+      }
+    }
+
+    function stopListening() {
+      if (!listening || !handler) return;
+      window.removeEventListener('deviceorientation', handler, true);
+      listening = false;
+      handler = null;
+      setStatus('Stopped listening.');
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+
+    startBtn.addEventListener('click', startListening);
+    stopBtn.addEventListener('click', stopListening);
+  </script>
+</body>
+</html>
