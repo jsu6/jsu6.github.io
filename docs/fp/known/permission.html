@@ -1,136 +1,74 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>DeviceOrientation Cross-Browser Demo</title>
+  <meta charset="utf-8"/>
+  <title>Minimal DeviceOrientation PoC</title>
   <style>
-    body { font-family: sans-serif; padding: 2rem; }
-    #status { margin-bottom: 1rem; font-weight: bold; }
-    .value { font-family: monospace; }
-    button { padding: 0.5rem 1rem; margin-right: 0.5rem; }
+    body{font-family:system-ui, -apple-system, Arial; padding:18px}
+    .v{font-family:monospace; font-size:1.1rem}
+    button{padding:6px 10px; margin-right:6px}
   </style>
 </head>
 <body>
-  <h1>DeviceOrientation Cross-Browser Demo</h1>
+  <h2>Minimal DeviceOrientation PoC</h2>
 
-  <div id="status">Checking support...</div>
-  <button id="check">Check Permission</button>
-  <button id="start">Start Listening</button>
-  <button id="stop" disabled>Stop</button>
+  <div>
+    <button id="start">Start</button>
+    <button id="stop" disabled>Stop</button>
+  </div>
 
-  <h2>Values</h2>
-  <p>alpha (z-axis): <span id="alpha" class="value">—</span></p>
-  <p>beta (x-axis): <span id="beta" class="value">—</span></p>
-  <p>gamma (y-axis): <span id="gamma" class="value">—</span></p>
+  <p>alpha: <span id="alpha" class="v">—</span></p>
+  <p>beta:  <span id="beta"  class="v">—</span></p>
+  <p>gamma: <span id="gamma" class="v">—</span></p>
 
-  <script>
-    const statusEl = document.getElementById('status');
-    const alphaEl  = document.getElementById('alpha');
-    const betaEl   = document.getElementById('beta');
-    const gammaEl  = document.getElementById('gamma');
-    const checkBtn = document.getElementById('check');
-    const startBtn = document.getElementById('start');
-    const stopBtn  = document.getElementById('stop');
+<script>
+const startBtn = document.getElementById('start');
+const stopBtn  = document.getElementById('stop');
+const a = document.getElementById('alpha');
+const b = document.getElementById('beta');
+const g = document.getElementById('gamma');
 
-    let handler = null;
-    let listening = false;
-    let gotEvent = false;
+let handler = null;
 
-    function setStatus(text) {
-      statusEl.textContent = text;
+function fmt(x){ return x == null ? 'null' : Number(x).toFixed(2); }
+
+async function start(){
+  if (typeof DeviceOrientationEvent === 'undefined'){
+    alert('DeviceOrientationEvent not supported.');
+    return;
+  }
+
+  // iOS 13+ requires permission via requestPermission()
+  if (typeof DeviceOrientationEvent.requestPermission === 'function'){
+    try {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res !== 'granted'){ alert('Permission denied'); return; }
+    } catch (e) {
+      alert('Permission request failed: ' + e);
+      return;
     }
+  }
 
-    function updateValues(e) {
-      gotEvent = true;
-      alphaEl.textContent = e.alpha != null ? e.alpha.toFixed(2) : 'null';
-      betaEl.textContent  = e.beta  != null ? e.beta.toFixed(2)  : 'null';
-      gammaEl.textContent = e.gamma != null ? e.gamma.toFixed(2) : 'null';
-    }
+  handler = (ev) => {
+    a.textContent = fmt(ev.alpha);
+    b.textContent = fmt(ev.beta);
+    g.textContent = fmt(ev.gamma);
+  };
 
-    async function checkPermission() {
-      if (typeof DeviceOrientationEvent === 'undefined') {
-        setStatus('DeviceOrientationEvent not supported in this browser.');
-        return;
-      }
+  window.addEventListener('deviceorientation', handler, true);
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+}
 
-      // Try permission API (iOS 13+)
-      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const state = await navigator.permissions
-            ?.query?.({ name: 'accelerometer' })
-            .catch(() => null);
+function stop(){
+  if (handler) window.removeEventListener('deviceorientation', handler, true);
+  handler = null;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+}
 
-          if (state) {
-            setStatus(`Permission state for motion sensors: ${state.state}`);
-            return;
-          }
-          setStatus('Permission check unavailable — may require user gesture.');
-        } catch (err) {
-          setStatus('Could not check permission: ' + err);
-        }
-      } else {
-        setStatus('Browser supports DeviceOrientation without permission prompt.');
-      }
-    }
-
-    async function startListening() {
-      if (listening) return;
-
-      gotEvent = false;
-      setStatus('Starting listener…');
-
-      if (typeof DeviceOrientationEvent === 'undefined') {
-        setStatus('DeviceOrientationEvent not supported.');
-        return;
-      }
-
-      // iOS path
-      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const result = await DeviceOrientationEvent.requestPermission();
-          if (result === 'granted') {
-            attachListener('Permission granted (iOS)');
-          } else {
-            setStatus('Permission denied for DeviceOrientationEvent.');
-          }
-        } catch (err) {
-          setStatus('Error requesting permission: ' + err);
-        }
-      } else {
-        // Non-iOS (Android, desktop, etc.)
-        attachListener('Listening for events (no permission prompt)');
-      }
-
-      // Fallback check if no data arrives
-      setTimeout(() => {
-        if (!gotEvent && listening)
-          setStatus('No motion data received — desktop devices may not have sensors.');
-      }, 3000);
-    }
-
-    function attachListener(msg) {
-      window.addEventListener('deviceorientation', handler = updateValues, true);
-      listening = true;
-      setStatus(msg);
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-    }
-
-    function stopListening() {
-      if (!listening || !handler) return;
-      window.removeEventListener('deviceorientation', handler, true);
-      listening = false;
-      handler = null;
-      setStatus('Stopped listening.');
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-    }
-
-    checkBtn.addEventListener('click', checkPermission);
-    startBtn.addEventListener('click', startListening);
-    stopBtn.addEventListener('click', stopListening);
-
-    setStatus('Ready. Click "Check Permission" or "Start".');
-  </script>
+startBtn.addEventListener('click', start);
+stopBtn.addEventListener('click', stop);
+</script>
 </body>
 </html>
