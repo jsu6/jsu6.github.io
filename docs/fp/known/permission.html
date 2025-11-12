@@ -2,11 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Minimal DeviceOrientation PoC</title>
+  <title>Minimal DeviceOrientation PoC — Permission Response Time</title>
   <style>
     body{font-family:system-ui, -apple-system, Arial; padding:18px}
     .v{font-family:monospace; font-size:1.1rem}
     button{padding:6px 10px; margin-right:6px}
+    .meta{margin-top:10px; color:#333}
   </style>
 </head>
 <body>
@@ -21,14 +22,24 @@
   <p>beta:  <span id="beta"  class="v">—</span></p>
   <p>gamma: <span id="gamma" class="v">—</span></p>
 
+  <div class="meta">
+    <div>Permission status: <span id="permStatus">—</span></div>
+    <div>Response time: <span id="permTime">—</span> ms</div>
+  </div>
+
 <script>
 const startBtn = document.getElementById('start');
 const stopBtn  = document.getElementById('stop');
 const a = document.getElementById('alpha');
 const b = document.getElementById('beta');
 const g = document.getElementById('gamma');
+const permStatusEl = document.getElementById('permStatus');
+const permTimeEl = document.getElementById('permTime');
 
 let handler = null;
+let permissionStart = 0;
+let firstEventStart = 0;
+let firstEventTimeout = null;
 
 function fmt(x){ return x == null ? 'null' : Number(x).toFixed(2); }
 
@@ -38,26 +49,66 @@ async function start(){
     return;
   }
 
-  // iOS 13+ requires permission via requestPermission()
+  permStatusEl.textContent = 'pending...';
+  permTimeEl.textContent = '—';
+
+  // iOS permission flow
   if (typeof DeviceOrientationEvent.requestPermission === 'function'){
     try {
+      // mark time just before prompt (user gesture - must be called from click)
+      permissionStart = performance.now();
       const res = await DeviceOrientationEvent.requestPermission();
-      if (res !== 'granted'){ alert('Permission denied'); return; }
+      const permissionEnd = performance.now();
+      const delta = Math.round(permissionEnd - permissionStart);
+      permTimeEl.textContent = String(delta);
+      permStatusEl.textContent = res === 'granted' ? 'granted' : ('denied / ' + String(res));
+      if (res === 'granted') attachHandler();
     } catch (e) {
-      alert('Permission request failed: ' + e);
-      return;
+      const permissionEnd = performance.now();
+      permTimeEl.textContent = String(Math.round(permissionEnd - permissionStart));
+      permStatusEl.textContent = 'error: ' + String(e);
     }
+  } else {
+    // No permission API (Android / desktop). Measure time to first event as a proxy.
+    permStatusEl.textContent = 'no prompt (measuring time to first event)';
+    firstEventStart = performance.now();
+    attachHandler();
+
+    // timeout after 5 seconds if no event arrives
+    firstEventTimeout = setTimeout(() => {
+      if (permTimeEl.textContent === '—') {
+        permTimeEl.textContent = 'timeout (no event within 5000 ms)';
+        permStatusEl.textContent = 'no-sensor / desktop';
+      }
+    }, 5000);
   }
 
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+}
+
+function attachHandler(){
   handler = (ev) => {
     a.textContent = fmt(ev.alpha);
     b.textContent = fmt(ev.beta);
     g.textContent = fmt(ev.gamma);
+
+    // If we were measuring time-to-first-event, record it now
+    if (firstEventStart) {
+      const now = performance.now();
+      const delta = Math.round(now - firstEventStart);
+      // only set if not set yet
+      if (permTimeEl.textContent === '—' || permTimeEl.textContent.startsWith('timeout')) {
+        permTimeEl.textContent = String(delta);
+        permStatusEl.textContent = 'event-received';
+        clearTimeout(firstEventTimeout);
+      }
+      // clear start marker so we don't overwrite on subsequent events
+      firstEventStart = 0;
+    }
   };
 
   window.addEventListener('deviceorientation', handler, true);
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
 }
 
 function stop(){
