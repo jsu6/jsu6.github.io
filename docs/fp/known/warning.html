@@ -1,21 +1,45 @@
 <!doctype html>
-<script>
-(async () => {
-  const w = window.open('about:blank', '_blank', 'noopener=no'); // open a small popup
-  if (!w) { console.log('popup blocked'); return; }
+<html>
+<meta charset="utf-8">
+<title>History SecurityError PoC</title>
+<body>
+  <h2>Trigger History::length SecurityError</h2>
+  <p>This demo detaches an iframe and tries to read <code>history.length</code> from it.</p>
+  <button id="run">Run test</button>
+  <pre id="output"></pre>
 
-  // write something so it has a document/history
-  w.document.open();
-  w.document.write('<title>temp</title><p>temp</p>');
-  w.document.close();
+  <script>
+  const out = document.getElementById('output');
 
-  // close the window (destroy browsing context)
-  w.close();
-
-  try {
-    console.log('history.length on closed window:', w.history.length);
-  } catch (e) {
-    console.error('Access threw:', e && e.name, '-', e && e.message);
+  function log(msg) {
+    out.textContent += msg + "\n";
   }
-})();
-</script>
+
+  document.getElementById('run').onclick = async () => {
+    out.textContent = ""; // clear
+    const iframe = document.createElement("iframe");
+    iframe.srcdoc = "<p>inner frame</p>";
+    document.body.appendChild(iframe);
+
+    await new Promise(r => iframe.onload = r);
+    log("iframe loaded. history.length = " + iframe.contentWindow.history.length);
+
+    // Detach iframe from DOM — its document may no longer be fully active
+    iframe.remove();
+    log("iframe removed from DOM.");
+
+    // Wait a bit before accessing again
+    setTimeout(() => {
+      try {
+        const len = iframe.contentWindow.history.length;
+        log("Access succeeded (no exception): " + len);
+      } catch (e) {
+        log("⚠️ Exception caught:");
+        log("  name: " + e.name);
+        log("  message: " + e.message);
+      }
+    }, 200);
+  };
+  </script>
+</body>
+</html>
