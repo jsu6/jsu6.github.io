@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WebGPU Fingerprinting PoC</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 2rem;
+      background: #f5f5f5;
+    }
+    h1 {
+      font-size: 1.6rem;
+      margin-bottom: 0.5rem;
+    }
+    #status {
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 960px;
+      background: white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.5rem 0.75rem;
+      vertical-align: top;
+      font-size: 0.9rem;
+    }
+    th {
+      background: #f0f0f0;
+      text-align: left;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .hint {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: #555;
+      max-width: 960px;
+    }
+    button {
+      margin-bottom: 1rem;
+      padding: 0.4rem 0.8rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebGPU GPUAdapter Fingerprinting PoC</h1>
+  <div id="status">Checking WebGPU support…</div>
+  <button id="run">Re-run fingerprinting</button>
+  <table>
+    <thead>
+      <tr>
+        <th>Property</th>
+        <th>Condition</th>
+        <th>Type</th>
+        <th>Sample Value</th>
+      </tr>
+    </thead>
+    <tbody id="results">
+      <!-- Filled dynamically -->
+    </tbody>
+  </table>
+
+  <div class="hint">
+    This proof of concept collects GPU-related attributes from WebGPU’s <code>GPUAdapter</code>.
+    Differences in these values (e.g. supported features, numeric limits, fallback/compat mode)
+    can contribute to a unique fingerprint across devices and browsers.
+  </div>
+
+  <script>
+    async function collectGPUFingerprint() {
+      const statusEl = document.getElementById('status');
+      const tbody = document.getElementById('results');
+      tbody.innerHTML = '';
+
+      if (!('gpu' in navigator)) {
+        statusEl.textContent = 'WebGPU not supported in this browser.';
+        return;
+      }
+
+      statusEl.textContent = 'Requesting GPUAdapter…';
+
+      let adapter;
+      try {
+        adapter = await navigator.gpu.requestAdapter();
+      } catch (e) {
+        statusEl.textContent = 'Failed to request GPUAdapter: ' + e;
+        return;
+      }
+
+      if (!adapter) {
+        statusEl.textContent = 'No GPUAdapter available (navigator.gpu.requestAdapter() returned null).';
+        return;
+      }
+
+      statusEl.textContent = 'GPUAdapter obtained. Collecting fingerprint attributes…';
+
+      // Helper to add rows
+      function addRow(prop, condition, type, value) {
+        const tr = document.createElement('tr');
+
+        const tdProp = document.createElement('td');
+        tdProp.textContent = prop;
+
+        const tdCond = document.createElement('td');
+        tdCond.textContent = condition;
+
+        const tdType = document.createElement('td');
+        tdType.textContent = type;
+
+        const tdValue = document.createElement('td');
+        const code = document.createElement('code');
+        code.textContent = value;
+        tdValue.appendChild(code);
+
+        tr.appendChild(tdProp);
+        tr.appendChild(tdCond);
+        tr.appendChild(tdType);
+        tr.appendChild(tdValue);
+
+        tbody.appendChild(tr);
+      }
+
+      // 1. GPUAdapter.info / requestAdapterInfo()
+      try {
+        let condition = 'not available';
+        let type = 'n/a';
+        let sample = 'n/a';
+
+        if ('info' in adapter) {
+          condition = 'GPUAdapter.info property present';
+          type = typeof adapter.info;
+          try {
+            sample = JSON.stringify(adapter.info, null, 2);
+          } catch {
+            sample = String(adapter.info);
+          }
+        } else if (typeof adapter.requestAdapterInfo === 'function') {
+          condition = 'requestAdapterInfo() supported';
+          const info = await adapter.requestAdapterInfo();
+          type = Object.prototype.toString.call(info);
+          sample = JSON.stringify(info, null, 2);
+        }
+
+        addRow(
+          'GPUAdapter.info',
+          condition,
+          type,
+          sample
+        );
+      } catch (e) {
+        addRow('GPUAdapter.info', 'error reading info', 'error', String(e));
+      }
+
+      // 2. GPUAdapter.features
+      try {
+        let condition = 'no features object';
+        let type = 'n/a';
+        let sample = 'n/a';
+
+        if (adapter.features) {
+          const featuresArray = Array.from(adapter.features.values?.() || adapter.features);
+          condition = 'features supported: count=' + featuresArray.length;
+          type = Object.prototype.toString.call(adapter.features);
+          sample = featuresArray.join(', ');
+        }
+
+        addRow(
+          'GPUAdapter.features',
+          condition,
+          type,
+          sample
+        );
+      } catch (e) {
+        addRow('GPUAdapter.features', 'error reading features', 'error', String(e));
+      }
+
+      // 3. GPUAdapter.limits
+      try {
+        let condition = 'no limits object';
+        let type = 'n/a';
+        let sample = 'n/a';
+
+        if (adapter.limits) {
+          const entries = Object.entries(adapter.limits);
+          condition = 'limits present: count=' + entries.length;
+          type = Object.prototype.toString.call(adapter.limits);
+          // show up to first 10 limits as sample
+          const preview = entries.slice(0, 10).map(
+            ([k, v]) => k + ': ' + v
+          );
+          sample = preview.join('\n');
+          if (entries.length > 10) {
+            sample += `\n… (${entries.length - 10} more)`;
+          }
+        }
+
+        addRow(
+          'GPUAdapter.limits',
+          condition,
+          type,
+          sample
+        );
+      } catch (e) {
+        addRow('GPUAdapter.limits', 'error reading limits', 'error', String(e));
+      }
+
+      // 4. GPUAdapter.isFallbackAdapter
+      try {
+        let condition = 'property missing on adapter';
+        let type = 'n/a';
+        let sample = 'n/a';
+
+        if ('isFallbackAdapter' in adapter) {
+          condition = 'property present';
+          type = typeof adapter.isFallbackAdapter;
+          sample = String(adapter.isFallbackAdapter);
+        }
+
+        addRow(
+          'GPUAdapter.isFallbackAdapter',
+          condition,
+          type,
+          sample
+        );
+      } catch (e) {
+        addRow('GPUAdapter.isFallbackAdapter', 'error reading property', 'error', String(e));
+      }
+
+      // 5. GPUAdapter.isCompatibilityMode (not always supported)
+      try {
+        let condition = 'property missing on adapter';
+        let type = 'n/a';
+        let sample = 'n/a';
+
+        if ('isCompatibilityMode' in adapter) {
+          condition = 'property present';
+          type = typeof adapter.isCompatibilityMode;
+          sample = String(adapter.isCompatibilityMode);
+        }
+
+        addRow(
+          'GPUAdapter.isCompatibilityMode',
+          condition,
+          type,
+          sample
+        );
+      } catch (e) {
+        addRow('GPUAdapter.isCompatibilityMode', 'error reading property', 'error', String(e));
+      }
+
+      statusEl.textContent = 'Done. Values above can be combined as part of a GPU-based fingerprint.';
+    }
+
+    document.getElementById('run').addEventListener('click', collectGPUFingerprint);
+
+    // Auto-run on load
+    collectGPUFingerprint();
+  </script>
+</body>
+</html>
