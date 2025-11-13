@@ -1,138 +1,278 @@
 <!doctype html>
 <meta charset="utf-8" />
-<title>Animation Timing Fingerprint (10 rounds)</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Web Animations Fingerprinting PoC (10 rounds)</title>
 <style>
-  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
-  body { padding: 18px; max-width: 900px; }
-  h1 { font-size: 20px; margin-bottom: 10px; }
-  button { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fafafa; cursor: pointer; }
-  pre { background: #fafafa; border: 1px solid #ddd; padding: 8px; overflow: auto; max-height: 260px; }
-  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px; }
+  #box { width: 80px; height: 80px; background: #4aa3ff; margin: 16px 0; }
+  table { border-collapse: collapse; margin-top: 12px; font-size: 13px; }
   th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-  th { background: #f5f5f5; }
-  .muted { color: #666; font-size: 12px; }
+  code { background: #f6f8fa; padding: 2px 4px; border-radius: 4px; }
+  .muted { color: #666; }
 </style>
 
-<h1>Animation Timing Fingerprint</h1>
+<h2>Web Animations API — 10-Round Measurement</h2>
 <p class="muted">
-Runs 10 rounds using <code>Animation.startTime</code>, <code>updatePlaybackRate()</code>,
-<code>AnimationEffect.getComputedTiming()</code>, <code>getTiming()</code>,
-<code>updateTiming()</code>, and <code>AnimationTimeline.getCurrentTime()</code>.
-Measures average duration and stability across rounds.
+Uses: <code>Animation.cancel</code>, <code>Animation.commitStyles</code>, <code>Animation.currentTime</code>,
+<code>Animation.effect</code>, <code>Animation.finish</code>, <code>Animation.id</code>, <code>Animation.pause</code>, <code>Animation.play</code>,
+<code>Animation.playState</code>, <code>Animation.progress</code> (if present), <code>Animation.reverse</code>,
+<code>Animation.startTime</code>, <code>Animation.updatePlaybackRate</code>,
+<code>AnimationEffect.getComputedTiming</code>, <code>AnimationEffect.getTiming</code>, <code>AnimationEffect.updateTiming</code>,
+<code>AnimationTimeline.getCurrentTime</code> (or <code>currentTime</code>), and (optionally) <code>AnimationWorkletGlobalScope.registerAnimator</code>.
 </p>
 
-<button id="runBtn">Run 10 Rounds</button>
-<span id="status" class="muted">idle</span>
+<button id="run">Run 10 rounds</button>
+<div id="box"></div>
 
-<table id="table">
+<h3>Per-round results</h3>
+<table id="tbl">
   <thead>
-    <tr><th>Round</th><th>Duration (ms)</th><th>Mean Frame Δ</th><th>Std</th><th>Hash</th></tr>
+    <tr>
+      <th>Round</th>
+      <th>playState→finish(ms)</th>
+      <th>startTime</th>
+      <th>currentTime(before/after)</th>
+      <th>timelineTime</th>
+      <th>playbackRate→after</th>
+      <th>getTiming()</th>
+      <th>computed.progress</th>
+      <th>progress(prop)</th>
+      <th>reverse turnaround(ms)</th>
+      <th>commitStyles ok</th>
+      <th>worklet ok</th>
+      <th>round hash</th>
+    </tr>
   </thead>
   <tbody></tbody>
 </table>
 
-<h3>Fingerprint Summary</h3>
-<pre id="out"></pre>
+<h3>Aggregate</h3>
+<pre id="agg">Waiting…</pre>
 
 <script>
-(async()=>{
-const $ = s=>document.querySelector(s);
-const runBtn=$("#runBtn"),status=$("#status"),tbody=$("#table tbody"),out=$("#out");
+(async function(){
+  const btn = document.getElementById('run');
+  const box = document.getElementById('box');
+  const tbody = document.querySelector('#tbl tbody');
+  const agg = document.getElementById('agg');
 
-runBtn.onclick=async()=>{
-  runBtn.disabled=true; tbody.innerHTML=""; out.textContent=""; status.textContent="running…";
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  const rounds=10;
-  const hashes=[], times=[];
-  for(let i=0;i<rounds;i++){
-    const res = await singleRun(i+1);
-    hashes.push(res.hash);
-    times.push(res.stats.mean);
-    const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${i+1}</td><td>${round(res.totalTime)}</td><td>${round(res.stats.mean)}</td><td>${round(res.stats.std)}</td><td style="font-family:monospace">${res.hash.slice(0,16)}…</td>`;
-    tbody.appendChild(tr);
-    await sleep(300);
+  function djb2(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
+    return (h >>> 0).toString(16);
   }
 
-  const stability = computeStability(hashes);
-  const mean = meanVal(times), std = stdVal(times,mean);
-  out.textContent = JSON.stringify({ stability, mean, std, hashes }, null, 2);
-  status.textContent = "done";
-  runBtn.disabled=false;
-};
+  function safe(v) {
+    if (v === undefined) return 'n/a';
+    if (v === null) return 'null';
+    if (typeof v === 'number') return Number.isFinite(v) ? v.toFixed(3) : String(v);
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  }
 
-async function singleRun(roundNo){
-  const box = document.createElement("div");
-  box.style.width="20px"; box.style.height="20px";
-  box.style.background="#69f"; box.style.position="absolute"; box.style.top="0"; box.style.left="0";
-  document.body.appendChild(box);
+  function timelineNow() {
+    // Try AnimationTimeline.getCurrentTime(); fall back to .currentTime
+    try {
+      if (document.timeline && typeof document.timeline.getCurrentTime === 'function') {
+        return document.timeline.getCurrentTime();
+      }
+      return document.timeline?.currentTime ?? null;
+    } catch { return null; }
+  }
 
-  const keyframes=[{transform:'translateX(0px)'},{transform:'translateX(100px)'}];
-  const options={duration:1000,iterations:1,easing:'linear'};
-  const anim = box.animate(keyframes,options);
+  async function runRound(round) {
+    // Fresh element per round so commitStyles()+cancel() don’t affect subsequent rounds
+    const el = box.cloneNode(true);
+    el.id = 'box-' + round;
+    box.after(el);
 
-  // access Animation.startTime, set playback rate
-  anim.startTime = document.timeline.getCurrentTime();
-  anim.updatePlaybackRate(1.0 + (Math.random()*0.2 - 0.1)); // small variation
+    // Keyframes/options
+    const kf = [
+      { transform: 'translateX(0px) scale(1)', opacity: 0.6, offset: 0 },
+      { transform: 'translateX(140px) scale(1.15)', opacity: 1.0, offset: 0.6 },
+      { transform: 'translateX(200px) scale(1.0)', opacity: 0.8, offset: 1 }
+    ];
+    const opts = { duration: 600 + (round % 3) * 80, easing: 'cubic-bezier(0.2,0.8,0.2,1)', fill: 'both' };
 
-  const deltas=[], start=document.timeline.getCurrentTime();
-  let last=start;
+    const anim = el.animate(kf, opts);
+    anim.id = `round-${round}`;                     // Animation.id
+    const idVal = anim.id;
 
-  // read timing structs
-  const timing0 = anim.effect.getTiming();
-  anim.effect.updateTiming({delay:(timing0.delay||0)+0.1}); // micro adjustment
-  const comp0 = anim.effect.getComputedTiming();
+    // Baselines
+    const t0 = performance.now();
+    const startT0 = anim.startTime ?? null;         // Animation.startTime
+    let curT_before = anim.currentTime ?? null;     // Animation.currentTime
+    let tlTime0 = timelineNow();                    // AnimationTimeline.getCurrentTime or .currentTime
+    const eff = anim.effect;                        // Animation.effect
+    const timing0 = eff?.getTiming?.();             // AnimationEffect.getTiming()
 
-  await new Promise(resolve=>{
-    function tick(t){
-      const tl=document.timeline.getCurrentTime();
-      const comp=anim.effect.getComputedTiming();
-      deltas.push(tl-last);
-      last=tl;
-      if(tl-start<1000) requestAnimationFrame(tick);
-      else resolve();
+    // Force ready/play
+    await anim.ready.catch(()=>{});
+    anim.play();                                    // Animation.play
+    let state1 = anim.playState;                    // Animation.playState
+    // Jitter sampling & progress
+    await sleep(16);
+    // PlaybackRate manipulation
+    const newRate = (round % 2) ? 1.25 : 0.85;
+    anim.updatePlaybackRate?.(newRate);             // Animation.updatePlaybackRate
+    const rateAfter = anim.playbackRate;
+
+    // Effect timing tweak mid-flight
+    const newDur = (timing0?.duration || opts.duration) + ((round % 3) - 1) * 40;
+    eff?.updateTiming?.({ duration: newDur });      // AnimationEffect.updateTiming
+
+    // Pause/play
+    anim.pause();                                   // Animation.pause
+    await sleep(10);
+    const curT_mid = anim.currentTime ?? null;
+    anim.play();
+
+    // Reverse briefly to inspect turnaround latency
+    const revStart = performance.now();
+    anim.reverse();                                 // Animation.reverse
+    await sleep(32);
+    const revLatency = performance.now() - revStart;
+    anim.play(); // resume forward
+
+    // Computed timing snapshot
+    const computed = eff?.getComputedTiming?.();    // AnimationEffect.getComputedTiming
+    const computedProgress = computed?.progress ?? null;
+
+    // Try to read non-standard Animation.progress (if present)
+    const progressProp = ('progress' in anim) ? (anim.progress ?? null) : 'n/a';
+
+    // Finish path: some browsers need an explicit finish() after near-end
+    // but we want a natural finish for measurement; do both defensively.
+    let finishedMs = null;
+    try {
+      await anim.finished;                          // awaits natural finish
+      finishedMs = performance.now() - t0;
+    } catch {
+      // If finished rejected (e.g., canceled), force a finish
+      try { anim.finish(); finishedMs = performance.now() - t0; } catch {}
     }
-    requestAnimationFrame(tick);
-  });
 
-  const total=document.timeline.getCurrentTime()-start;
-  const stats=calcStats(deltas);
-  const obj={ startTime:anim.startTime, duration:total, mean:stats.mean, std:stats.std,
-              computedTiming:compact(comp0), timing:compact(timing0)};
-  const hash=await hashObj(obj);
+    // Commit styles and cancel to freeze resultant state without keeping a running animation
+    let commitOk = false;
+    try { anim.commitStyles?.(); commitOk = true; } // Animation.commitStyles
+    catch { commitOk = false; }
+    try { anim.cancel(); } catch {}                 // Animation.cancel
 
-  anim.cancel(); box.remove();
-  return { totalTime: total, stats, hash };
-}
+    // Optional: Animation Worklet — registerAnimator & run a tiny step if supported
+    // This records whether we could register and tick once; useful as a capability signal
+    let workletOk = 'n/a';
+    if (CSS && 'animationWorklet' in CSS && 'addModule' in CSS.animationWorklet && 'WorkletAnimation' in window) {
+      try {
+        const src = `
+          registerAnimator('pinger', class {
+            animate(currentTime, effect) {
+              // Nudge local time based on currentTime to make it deterministic-ish
+              effect.localTime = (currentTime || 0) % 1234;
+            }
+          });
+        `;
+        const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+        await CSS.animationWorklet.addModule(url);
+        const wa = new WorkletAnimation('pinger', new KeyframeEffect(el, [{opacity:0.5},{opacity:1}], {duration:500}), document.timeline);
+        wa.play();
+        // Give it a small tick window
+        await sleep(20);
+        wa.cancel();
+        workletOk = true;
+      } catch {
+        workletOk = false;
+      }
+    }
 
-function calcStats(a){
-  const arr=a.filter(x=>isFinite(x));const n=arr.length;
-  const mean=arr.reduce((a,b)=>a+b,0)/n;
-  const v=arr.reduce((a,b)=>a+(b-mean)**2,0)/n;
-  const std=Math.sqrt(v);
-  return{mean,std,n};
-}
+    const curT_after = anim.currentTime ?? null;
+    const tlTime1 = timelineNow();
+    const stateEnd = anim.playState;
 
-async function hashObj(o){
-  const enc=new TextEncoder().encode(JSON.stringify(o));
-  const buf=await crypto.subtle.digest("SHA-256",enc);
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
-}
+    // Build a compact record
+    const record = {
+      id: idVal,
+      state1, stateEnd,
+      startTime: startT0,
+      currentTime_before: curT_before,
+      currentTime_after: curT_after,
+      timelineTime0: tlTime0,
+      timelineTime1: tlTime1,
+      playbackRate_after: rateAfter,
+      getTiming_duration: timing0?.duration ?? null,
+      getTiming_delay: timing0?.delay ?? null,
+      computed_progress: computedProgress,
+      progress_prop: progressProp,
+      reverse_latency_ms: Math.round(revLatency),
+      finished_ms: finishedMs != null ? Math.round(finishedMs) : null,
+      commitStyles_ok: commitOk,
+      worklet_ok: workletOk
+    };
 
-function computeStability(hs){
-  if(hs.length<2)return 100;
-  const base=hs[0].split("");let diff=0,total=0;
-  for(let i=1;i<hs.length;i++){
-    const cur=hs[i].split("");
-    for(let j=0;j<base.length;j++){total++; if(base[j]!==cur[j]) diff++;}
+    // Render a row
+    const row = document.createElement('tr');
+    const cells = [
+      round,
+      record.finished_ms,
+      safe(record.startTime),
+      `${safe(record.currentTime_before)} → ${safe(record.currentTime_after)}`,
+      `${safe(record.timelineTime0)} → ${safe(record.timelineTime1)}`,
+      safe(record.playbackRate_after),
+      `dur=${safe(record.getTiming_duration)}, delay=${safe(record.getTiming_delay)}`,
+      safe(record.computed_progress),
+      safe(record.progress_prop),
+      safe(record.reverse_latency_ms),
+      record.commitStyles_ok,
+      record.worklet_ok,
+      djb2(JSON.stringify(record))
+    ];
+    for (const c of cells) {
+      const td = document.createElement('td');
+      td.textContent = String(c);
+      row.appendChild(td);
+    }
+    tbody.appendChild(row);
+
+    // Return the record for aggregate hashing
+    return record;
   }
-  return 100*(1-diff/total);
-}
-function meanVal(a){return a.reduce((x,y)=>x+y,0)/a.length;}
-function stdVal(a,m){return Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/a.length);}
-function compact(o){if(!o)return null;const pick={delay:o.delay,duration:o.duration,endDelay:o.endDelay,fill:o.fill,iterations:o.iterations,easing:o.easing};return pick;}
-function round(x){return x?Math.round(x*1000)/1000:"";}
-function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+  async function runAll() {
+    tbody.innerHTML = '';
+    agg.textContent = 'Running…';
+    const records = [];
+    const ROUNDS = 10;
+    for (let r = 1; r <= ROUNDS; r++) {
+      const rec = await runRound(r);
+      records.push(rec);
+    }
+    // Aggregate stability summary
+    const json = JSON.stringify(records);
+    const hash = djb2(json);
+    // summarize a few distributions to see consistency across rounds
+    const finished = records.map(x => x.finished_ms).filter(x => Number.isFinite(x));
+    const revlat = records.map(x => x.reverse_latency_ms).filter(x => Number.isFinite(x));
+    const mean = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : NaN;
+    const std  = arr => {
+      if (!arr.length) return NaN;
+      const m = mean(arr);
+      return Math.sqrt(arr.reduce((s,x)=>s+(x-m)*(x-m),0)/arr.length);
+    };
+
+    agg.textContent =
+`Aggregate hash: ${hash}
+Rounds: ${records.length}
+finished_ms: mean=${mean(finished).toFixed(2)} std=${std(finished).toFixed(2)}  values=${finished.join(', ')}
+reverse_latency_ms: mean=${mean(revlat).toFixed(2)} std=${std(revlat).toFixed(2)}  values=${revlat.join(', ')}
+worklet_supported: ${records.some(r => r.worklet_ok === true) ? 'yes' : (records.some(r => r.worklet_ok === false) ? 'partial/blocked' : 'n/a')}
+Notes:
+- “progress(prop)” shows non-standard Animation.progress if present; otherwise “n/a”.
+- Timeline time uses AnimationTimeline.getCurrentTime() when available; otherwise .currentTime.
+- Each row’s final column is a compact hash of that round’s metrics.`;
+  }
+
+  btn.addEventListener('click', () => runAll());
+  // auto-run once
+  runAll();
 })();
 </script>
