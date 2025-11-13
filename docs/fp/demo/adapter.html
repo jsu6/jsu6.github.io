@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WebGPU Fingerprinting PoC (Fixed)</title>
+  <title>WebGPU Fingerprinting PoC (Corrected AdapterInfo)</title>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     table { border-collapse: collapse; width: 100%; margin-top: 20px; }
@@ -11,7 +11,8 @@
   </style>
 </head>
 <body>
-<h2>WebGPU Fingerprinting (Fixed Version)</h2>
+
+<h2>WebGPU Fingerprinting – Working AdapterInfo</h2>
 <div id="status"></div>
 
 <table>
@@ -46,75 +47,71 @@ async function run() {
     return;
   }
 
-  status.textContent = "Requesting adapter…";
+  status.textContent = "Requesting GPU adapter…";
 
   const adapter = await navigator.gpu.requestAdapter({
     powerPreference: "high-performance"
   });
 
   if (!adapter) {
-    status.textContent = "No GPU adapter available.";
+    status.textContent = "No adapter available.";
     return;
   }
 
   status.textContent = "Adapter acquired.";
 
-  // ---- FIXED: requestAdapterInfo MUST be used; adapter.info is not implemented ----
-  let infoValue = "unavailable";
-  let infoType = "n/a";
-  let infoCondition = "adapter.info not implemented in Chrome";
+  // ---- FIXED INFO (Chrome requires explicit whitelist!) ----
+  let info = {};
+  let condition = "";
+  let type = "";
 
   if (typeof adapter.requestAdapterInfo === "function") {
-    const info = await adapter.requestAdapterInfo({});
-    infoValue = JSON.stringify(info, null, 2);
-    infoType = typeof info;
-    infoCondition = "returned via requestAdapterInfo()";
+    try {
+      info = await adapter.requestAdapterInfo([
+        "vendor",
+        "architecture",
+        "device",
+        "description"
+      ]);
+
+      condition = "requestAdapterInfo() returned whitelisted fields";
+      type = typeof info;
+
+    } catch (err) {
+      condition = "requestAdapterInfo() failed";
+      type = "error";
+      info = String(err);
+    }
+  } else {
+    condition = "requestAdapterInfo() not supported";
+    type = "n/a";
+    info = "unavailable";
   }
 
-  add("GPUAdapter.info", infoCondition, infoType, infoValue);
+  add("GPUAdapter.info", condition, type, JSON.stringify(info, null, 2));
 
-  // ---- FIXED: adapter.features is iterable directly ----
+  // ---- FEATURES ----
   const features = [...adapter.features];
-  add(
-    "GPUAdapter.features",
-    "features supported: count=" + features.length,
-    typeof adapter.features,
-    JSON.stringify(features, null, 2)
-  );
+  add("GPUAdapter.features", "features available", typeof adapter.features, JSON.stringify(features, null, 2));
 
-  // ---- FIXED: Chrome zero-limits bug → explicitly read limits ----
-  const limitsObj = {};
+  // ---- LIMITS ----
+  const limits = {};
   for (const key of Object.keys(adapter.limits)) {
-    limitsObj[key] = adapter.limits[key];
+    limits[key] = adapter.limits[key];
   }
+  add("GPUAdapter.limits", "limits available", typeof adapter.limits, JSON.stringify(limits, null, 2));
 
-  add(
-    "GPUAdapter.limits",
-    "limits available: count=" + Object.keys(limitsObj).length,
-    typeof adapter.limits,
-    JSON.stringify(limitsObj, null, 2)
-  );
+  // ---- FALLBACK ----
+  add("GPUAdapter.isFallbackAdapter", "property present", typeof adapter.isFallbackAdapter, String(adapter.isFallbackAdapter));
 
-  // ---- fallback adapter ----
-  add(
-    "GPUAdapter.isFallbackAdapter",
-    "property present",
-    typeof adapter.isFallbackAdapter,
-    String(adapter.isFallbackAdapter)
-  );
-
-  // ---- compatibility mode ----
-  add(
-    "GPUAdapter.isCompatibilityMode",
-    "property present",
-    typeof adapter.isCompatibilityMode,
-    String(adapter.isCompatibilityMode)
-  );
+  // ---- COMPAT MODE ----
+  add("GPUAdapter.isCompatibilityMode", "property present", typeof adapter.isCompatibilityMode, String(adapter.isCompatibilityMode));
 
   status.textContent = "Done.";
 }
 
 run();
 </script>
+
 </body>
 </html>
