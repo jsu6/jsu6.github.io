@@ -1,0 +1,370 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Window API Fingerprinting — PoC</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+  body { padding: 18px; max-width: 1100px; }
+  h1 { margin: 0 0 8px; font-size: 20px; }
+  button { padding: 8px 14px; margin: 6px 6px 6px 0; border: 1px solid #ccc; border-radius: 8px; background: #f7f7f7; cursor: pointer; }
+  .muted { color:#666; font-size:12px; }
+  pre { background:#fafafa; border:1px solid #eee; padding:10px; border-radius:8px; overflow:auto; }
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+  th,td { border: 1px solid #ddd; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .ok { color: #0a7; }
+  .fail { color: #c33; }
+  .chip { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ddd; margin-right:6px; }
+</style>
+
+<h1>Window API Fingerprinting — PoC</h1>
+<p>
+  1) Click <b>Open Test Popup</b> (must be user-initiated).<br>
+  2) Then click <b>Run One Round</b> or <b>Run 5 Rounds</b>. You can also trigger <b>Print in Popup</b> manually to observe events.
+</p>
+
+<div>
+  <button id="open">Open Test Popup</button>
+  <button id="round">Run One Round</button>
+  <button id="round5">Run 5 Rounds</button>
+  <button id="print">Print in Popup</button>
+  <span class="muted">Popup features: width=420,height=300,left=50,top=50</span>
+</div>
+
+<div id="status" class="muted" style="margin-top:6px">Popup: <span id="popupState">not opened</span></div>
+
+<h3>Per-round results</h3>
+<table id="results">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Hash</th>
+      <th>moveBy</th>
+      <th>moveTo</th>
+      <th>resizeBy</th>
+      <th>resizeTo</th>
+      <th>print</th>
+      <th>trustedTypes</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h3>Raw metrics (last run)</h3>
+<pre id="raw">—</pre>
+
+<script>
+const statusEl = document.getElementById('popupState');
+const resultsTbody = document.querySelector('#results tbody');
+const rawEl = document.getElementById('raw');
+
+let pop = null;
+let roundCount = 0;
+let lastPrintInfo = null;
+
+// Utility: sleep
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Utility: safe property read (works across browsers without throwing on null)
+function readWindowGeom(w) {
+  if (!w) return null;
+  return {
+    screenX: w.screenX ?? w.screenLeft ?? null,
+    screenY: w.screenY ?? w.screenTop ?? null,
+    outerWidth: w.outerWidth ?? null,
+    outerHeight: w.outerHeight ?? null,
+    innerWidth: w.innerWidth ?? null,
+    innerHeight: w.innerHeight ?? null,
+    devicePixelRatio: w.devicePixelRatio ?? null,
+    screenAvailW: w.screen?.availWidth ?? null,
+    screenAvailH: w.screen?.availHeight ?? null
+  };
+}
+
+function errInfo(e) {
+  if (!e) return null;
+  return { name: e.name || 'Error', message: String(e.message || e) };
+}
+
+// Measure wrapper: time, error, and “after” geometry
+async function measure(opName, fn, opts={delay:80}) {
+  const t0 = performance.now();
+  const before = readWindowGeom(pop);
+  let ok = true, error = null;
+  try { await fn(); }
+  catch (e) { ok = false; error = errInfo(e); }
+  // Give the browser a tick to apply/clamp
+  await sleep(opts.delay);
+  const after = readWindowGeom(pop);
+  const dt = performance.now() - t0;
+
+  // Compute observed deltas (position and size)
+  function diff(a, b) { return (a==null||b==null) ? null : (a - b); }
+  const deltas = before && after ? {
+    dX: diff(after.screenX, before.screenX),
+    dY: diff(after.screenY, before.screenY),
+    dW: diff(after.outerWidth, before.outerWidth),
+    dH: diff(after.outerHeight, before.outerHeight)
+  } : null;
+
+  return { opName, ok, dt, before, after, deltas, error };
+}
+
+// Hashing helper (stable)
+async function hashObject(obj) {
+  const s = JSON.stringify(obj);
+  const bytes = new TextEncoder().encode(s);
+  const buf = await crypto.subtle.digest('SHA-256', bytes);
+  const view = new Uint8Array(buf);
+  return [...view].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// Trusted Types probe
+function probeTrustedTypes(w) {
+  const tt = w.trustedTypes;
+  const out = {
+    supported: !!tt,
+    getPolicyNames: null,
+    createdPolicyOK: null,
+    createError: null,
+    defaultPolicyPresent: null
+  };
+  if (!tt) return out;
+
+  try {
+    if (typeof tt.getPolicyNames === 'function') {
+      const names = tt.getPolicyNames();
+      out.getPolicyNames = Array.isArray(names) ? names.slice().sort() : String(names);
+      out.defaultPolicyPresent = names?.includes('default');
+    }
+  } catch (e) {
+    out.getPolicyNames = errInfo(e);
+  }
+
+  try {
+    const name = 'poc' + Math.random().toString(36).slice(2);
+    const pol = tt.createPolicy(name, {
+      createHTML: x => x,
+      createScript: x => x,
+      createScriptURL: x => x
+    });
+    out.createdPolicyOK = !!pol;
+  } catch (e) {
+    out.createdPolicyOK = false;
+    out.createError = errInfo(e);
+  }
+  return out;
+}
+
+// Print probe
+async function probePrint(w) {
+  const info = { beforeEvent: false, afterEvent: false, dt: null, error: null };
+  if (!w) { info.error = {name:'NoWindow', message:'popup not available'}; return info; }
+
+  const t0 = performance.now();
+  const beforeHandler = () => { info.beforeEvent = true; };
+  const afterHandler  = () => { info.afterEvent = true; info.dt = performance.now() - t0; };
+
+  w.addEventListener('beforeprint', beforeHandler, { once:true });
+  w.addEventListener('afterprint',  afterHandler,  { once:true });
+
+  try {
+    // Many browsers block this unless popup has focus
+    w.focus();
+    w.print(); // may be blocked; events may or may not fire
+  } catch (e) {
+    info.error = errInfo(e);
+  }
+
+  // Wait a bit to see if events fire; the dialog is user-driven so we can’t await it
+  await sleep(800);
+  if (!info.dt && info.afterEvent) info.dt = performance.now() - t0;
+  return info;
+}
+
+// One full round
+async function runRound() {
+  if (!pop || pop.closed) {
+    alert('Open the test popup first.');
+    return;
+  }
+  roundCount += 1;
+
+  // Reset popup content to keep it stable
+  try {
+    pop.document.body.innerHTML = `<p style="font-family:system-ui;margin:8px">Test popup — round ${roundCount}</p>`;
+  } catch {}
+
+  const metrics = {
+    ua: navigator.userAgent,
+    ts: new Date().toISOString(),
+    dpr: window.devicePixelRatio ?? null,
+    mainScreen: { w: screen.availWidth, h: screen.availHeight },
+    popupInitial: readWindowGeom(pop),
+    requested: {},
+    observed: {},
+    errors: {},
+    trustedTypes: null,
+    printProbe: null
+  };
+
+  // Sequence of operations to create distinctive clamping patterns
+  // Move by (15, 20)
+  const r1 = await measure('moveBy(15,20)', () => pop.moveBy(15, 20));
+  metrics.requested.moveBy = { dx:15, dy:20 };
+  metrics.observed.moveBy  = r1.deltas;
+  if (!r1.ok) metrics.errors.moveBy = r1.error;
+  metrics.observed.moveBy_dt = r1.dt;
+
+  // Move to near top-left (may clamp to visible area)
+  const r2 = await measure('moveTo(5,5)', () => pop.moveTo(5, 5));
+  metrics.requested.moveTo = { x:5, y:5 };
+  metrics.observed.moveTo  = r2.deltas; // delta from previous position
+  if (!r2.ok) metrics.errors.moveTo = r2.error;
+  metrics.observed.moveTo_dt = r2.dt;
+
+  // Resize by (37, 23) — odd steps can reveal quantization
+  const r3 = await measure('resizeBy(37,23)', () => pop.resizeBy(37, 23));
+  metrics.requested.resizeBy = { dW:37, dH:23 };
+  metrics.observed.resizeBy  = r3.deltas;
+  if (!r3.ok) metrics.errors.resizeBy = r3.error;
+  metrics.observed.resizeBy_dt = r3.dt;
+
+  // Resize to 480x360 — clamped by OS/window manager minimums
+  const r4 = await measure('resizeTo(480,360)', () => pop.resizeTo(480, 360));
+  metrics.requested.resizeTo = { W:480, H:360 };
+  metrics.observed.resizeTo  = r4.deltas;
+  if (!r4.ok) metrics.errors.resizeTo = r4.error;
+  metrics.observed.resizeTo_dt = r4.dt;
+
+  // Probe Trusted Types
+  metrics.trustedTypes = probeTrustedTypes(pop);
+
+  // Print probe (non-blocking observation)
+  metrics.printProbe = lastPrintInfo ?? { note: 'Use "Print in Popup" to actively trigger before/afterprint.' };
+
+  // Aggregate a compact features object that feeds the hash
+  const compact = {
+    engineHints: {
+      hasMoveBy: typeof pop.moveBy === 'function',
+      hasMoveTo: typeof pop.moveTo === 'function',
+      hasResizeBy: typeof pop.resizeBy === 'function',
+      hasResizeTo: typeof pop.resizeTo === 'function',
+      hasPrint: typeof pop.print === 'function',
+      hasTrustedTypes: !!pop.trustedTypes
+    },
+    geometry: {
+      dpr: metrics.dpr,
+      stepMove: [r1?.deltas?.dX, r1?.deltas?.dY],
+      stepResize: [r3?.deltas?.dW, r3?.deltas?.dH],
+      clampTopLeft: [r2?.after?.screenX, r2?.after?.screenY],
+      finalSize: [r4?.after?.outerWidth, r4?.after?.outerHeight],
+      innerSize: [r4?.after?.innerWidth, r4?.after?.innerHeight]
+    },
+    timings_ms: {
+      moveBy: r1.dt|0, moveTo: r2.dt|0, resizeBy: r3.dt|0, resizeTo: r4.dt|0
+    },
+    errors: {
+      moveBy: r1.error?.name || null,
+      moveTo: r2.error?.name || null,
+      resizeBy: r3.error?.name || null,
+      resizeTo: r4.error?.name || null
+    },
+    trustedTypes: {
+      supported: metrics.trustedTypes.supported,
+      names: metrics.trustedTypes.getPolicyNames || null,
+      createdPolicyOK: metrics.trustedTypes.createdPolicyOK,
+      createErrorName: metrics.trustedTypes.createError?.name || null
+    },
+    print: {
+      before: metrics.printProbe.beforeEvent || false,
+      after: metrics.printProbe.afterEvent || false,
+      errorName: metrics.printProbe.error?.name || null
+    }
+  };
+
+  const hash = await hashObject(compact);
+
+  // Update table
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${roundCount}</td>
+    <td><span class="chip">${hash.slice(0,16)}</span></td>
+    <td class="${r1.ok?'ok':'fail'}">${fmtDelta(r1.deltas)}</td>
+    <td class="${r2.ok?'ok':'fail'}">${fmtDelta(r2.deltas)}</td>
+    <td class="${r3.ok?'ok':'fail'}">${fmtDelta(r3.deltas)}</td>
+    <td class="${r4.ok?'ok':'fail'}">${fmtDelta(r4.deltas)}</td>
+    <td>${fmtPrint(metrics.printProbe)}</td>
+    <td>${fmtTT(metrics.trustedTypes)}</td>
+    <td>${notesFrom(metrics)}</td>
+  `;
+  resultsTbody.appendChild(tr);
+
+  rawEl.textContent = JSON.stringify({ compact, full: metrics }, null, 2);
+}
+
+function fmtDelta(d) {
+  if (!d) return 'n/a';
+  const p = [];
+  if (d.dX!=null) p.push(`Δx=${d.dX}`);
+  if (d.dY!=null) p.push(`Δy=${d.dY}`);
+  if (d.dW!=null) p.push(`Δw=${d.dW}`);
+  if (d.dH!=null) p.push(`Δh=${d.dH}`);
+  return p.join(' ');
+}
+
+function fmtTT(tt) {
+  if (!tt.supported) return '<span class="fail">unsupported</span>';
+  const names = Array.isArray(tt.getPolicyNames) ? tt.getPolicyNames.join(',') : (tt.getPolicyNames?.name ? tt.getPolicyNames.name : '—');
+  const create = tt.createdPolicyOK ? '<span class="ok">policy created</span>' :
+                 (tt.createError ? `err:${tt.createError.name}` : 'create?');
+  return `supported; names=[${names}] ; ${create}`;
+}
+
+function fmtPrint(p) {
+  if (!p) return '—';
+  const ev = `${p.beforeEvent?'before✓':'before×'} / ${p.afterEvent?'after✓':'after×'}`;
+  return p.error ? `err:${p.error.name}` : ev;
+}
+
+function notesFrom(m) {
+  const a = [];
+  if (m.errors.moveBy || m.errors.moveTo || m.errors.resizeBy || m.errors.resizeTo) a.push('ops blocked');
+  if (m.trustedTypes.supported && m.trustedTypes.createdPolicyOK===false) a.push('TT create blocked');
+  if (m.printProbe?.beforeEvent || m.printProbe?.afterEvent) a.push('print events fired');
+  return a.join('; ') || '—';
+}
+
+// Open popup with features that allow moving/resizing in most engines
+document.getElementById('open').onclick = () => {
+  try {
+    pop = window.open(
+      '',
+      'win-fp-poc',
+      'popup=yes,width=420,height=300,left=50,top=50,noopener'
+    );
+    if (!pop) {
+      alert('Popup blocked. Allow popups and try again.');
+      statusEl.textContent = 'blocked';
+      return;
+    }
+    pop.document.title = 'Window API PoC — popup';
+    pop.document.body.innerHTML = `<p style="font-family:system-ui;margin:8px">Test popup ready.</p>`;
+    statusEl.textContent = 'opened';
+  } catch (e) {
+    statusEl.textContent = 'error: ' + (e.name || e.message || e);
+  }
+};
+
+document.getElementById('round').onclick = runRound;
+
+document.getElementById('round5').onclick = async () => {
+  for (let i=0;i<5;i++) { await runRound(); await sleep(150); }
+};
+
+document.getElementById('print').onclick = async () => {
+  if (!pop || pop.closed) { alert('Open the test popup first.'); return; }
+  lastPrintInfo = await probePrint(pop);
+  alert('Print probe completed (events may depend on user action). Now run a round to include it in the hash.');
+};
+</script>
