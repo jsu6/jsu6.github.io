@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebXR Data PoC (no device)</title>
+<body style="font-family:system-ui;padding:1rem">
+<h2>WebXR Data Extraction PoC (no XR device required)</h2>
+<pre id="out"></pre>
+
+<script>
+const out = document.getElementById('out');
+const log = (...a) => out.textContent += a.join(' ') + '\n';
+
+async function main() {
+  const results = {};
+
+  function tryGet(desc, fn) {
+    try {
+      const val = fn();
+      const type = val === null ? "null" : typeof val;
+      results[desc] = { supported: true, type, sample: JSON.stringify(val, (_,v)=>(typeof v==="number"?v.toFixed?.(3):v)).slice(0,120) };
+      log(desc, "→", type, val && typeof val==='object' ? JSON.stringify(val).slice(0,80) : val);
+    } catch (e) {
+      results[desc] = { supported: false, error: e.name || String(e) };
+      log(desc, "✗", e.name || e);
+    }
+  }
+
+  // XRRay
+  if (window.XRRay) {
+    const ray = new XRRay();
+    tryGet('XRRay.origin', ()=>ray.origin);
+    tryGet('XRRay.direction', ()=>ray.direction);
+    tryGet('XRRay.matrix', ()=>ray.matrix);
+  }
+
+  // XRRigidTransform
+  if (window.XRRigidTransform) {
+    const t = new XRRigidTransform({x:0,y:0,z:0,w:1},{x:1,y:2,z:3});
+    tryGet('XRRigidTransform.position', ()=>t.position);
+    tryGet('XRRigidTransform.orientation', ()=>t.orientation);
+    tryGet('XRRigidTransform.inverse', ()=>t.inverse);
+  }
+
+  // XRPlane etc. — mock by checking constructor and prototypes
+  [
+    'XRAnchor','XRDepthInformation','XRFrame','XRGPUBinding','XRWebGLBinding',
+    'XRHand','XRHitTestSource','XRImageTrackingResult','XRJointSpace',
+    'XRLightEstimate','XRPlane','XRSession','XRView','XRViewerPose'
+  ].forEach(cls => {
+    const C = window[cls];
+    if (!C) return results[cls] = { supported:false };
+    const props = Object.getOwnPropertyNames(C.prototype || {}).filter(p=>p!=='constructor');
+    results[cls] = { supported:true, members:props };
+    log(`${cls}:`, props.join(', '));
+  });
+
+  // Try inline session to see if anything yields runtime data
+  if (navigator.xr) {
+    try {
+      const ok = await navigator.xr.isSessionSupported?.('inline');
+      if (ok) {
+        const s = await navigator.xr.requestSession('inline');
+        tryGet('XRSession.mode', ()=>s.mode);
+        tryGet('XRSession.updateRenderState', ()=>typeof s.updateRenderState);
+        const frame = {};
+        s.requestAnimationFrame((t,f)=>{
+          tryGet('XRFrame.createAnchor', ()=>!!f?.createAnchor);
+          tryGet('XRViewerPose', ()=>f?.getViewerPose?.({})); // expected fail or null
+          s.end();
+        });
+      }
+    } catch(e){
+      log('Session check failed:', e);
+    }
+  }
+
+  log('\nJSON summary:');
+  log(JSON.stringify(results,null,2));
+}
+
+main();
+</script>
