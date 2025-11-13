@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>Notification API Fingerprinting Demo (Educational)</title>
+<title>Comprehensive Notification API Fingerprinting Demo</title>
 <body style="font-family:system-ui;padding:1rem;white-space:pre-wrap">
-<h2>Notification API Fingerprinting Demo</h2>
-<p>This educational demo checks which Notification API features exist in your browser,
-counts how many return <b>true</b> or <b>false</b>, and shows the current permission state.
+<h2>Notification API Fingerprinting + Timing Demo</h2>
+<p>This educational demo combines <b>feature detection</b> and <b>timing analysis</b> to show how Notification APIs 
+can reveal browser, OS, and permission characteristics. 
 No data leaves your device.</p>
 
-<button id="run">Run Demo</button>
+<button id="run">Run Notification Demo</button>
 <pre id="out">Ready...</pre>
 
 <script>
@@ -16,9 +16,14 @@ const log = (...a) => out.textContent += a.join(' ') + '\n';
 
 document.getElementById('run').onclick = async () => {
   out.textContent = '';
-  log('[Notification API Inspection]');
-  log('Checking feature support...\n');
+  log('[Notification API Feature Inspection]\n');
 
+  if (!('Notification' in window)) {
+    log('❌ Notification API not supported.');
+    return;
+  }
+
+  // 1. === Feature presence vector ===
   const props = [
     'maxActions', 'permission', 'requestPermission',
     'actions', 'badge', 'body', 'dir', 'icon', 'image',
@@ -35,57 +40,81 @@ document.getElementById('run').onclick = async () => {
     else falseCount++;
   }
 
-  log('\n[Summary]');
+  log('\n[Feature Summary]');
   log(`Supported (true): ${trueCount}`);
   log(`Unsupported (false): ${falseCount}`);
-  log(`Total checked: ${props.length}\n`);
+  log(`Total checked: ${props.length}`);
 
-  log('[Feature values]');
+  log('\n[Feature Values]');
   log('maxActions =', Notification.maxActions);
   log('permission =', Notification.permission);
 
-  // --- Permission behavior ---
+  // 2. === Request permission ===
   if (Notification.permission !== 'granted') {
     try {
       const result = await Notification.requestPermission();
       log('requestPermission() ->', result);
+      if (result !== 'granted') {
+        log('❌ Permission not granted, aborting notification test.');
+        return;
+      }
     } catch(e) {
       log('Permission request error:', e.message);
+      return;
     }
   } else {
     log('Already granted.');
   }
 
-  // --- Create a local notification (no remote data) ---
-  if (Notification.permission === 'granted') {
-    const n = new Notification('Fingerprint Demo', {
-      body: 'Testing Notification rendering',
-      icon: 'https://via.placeholder.com/64',
-      image: 'https://via.placeholder.com/128',
-      tag: 'demoTag',
-      vibrate: [100,50,100],
-      requireInteraction: true,
-      renotify: true,
-      timestamp: Date.now()
-    });
+  // 3. === Create and measure timing of notification ===
+  const t0 = performance.now();
+  log('\n[Notification Timing Inference]');
+  log('Creating notification at', new Date().toLocaleTimeString(), '\n');
 
-    n.onshow = () => log('[onshow] Notification displayed');
-    n.onclick = () => log('[onclick] Notification clicked');
-    n.onclose = () => log('[onclose] Notification closed');
-    n.onerror = e => log('[onerror]', e.message);
-  } else {
-    log('Notification not shown because permission was not granted.');
-  }
+  const n = new Notification('Fingerprint Demo', {
+    body: 'Testing notification appearance...',
+    icon: 'https://via.placeholder.com/64',
+    image: 'https://via.placeholder.com/128',
+    tag: 'demoTag',
+    requireInteraction: false,
+    renotify: true,
+    timestamp: Date.now()
+  });
 
-  // --- Environment-based variations ---
-  log('\n[Environment signals]');
+  let shown = false;
+
+  n.onshow = () => {
+    shown = true;
+    const dt = (performance.now() - t0).toFixed(2);
+    log(`✅ onshow fired after ${dt} ms`);
+  };
+
+  n.onclose = () => {
+    const dt = (performance.now() - t0).toFixed(2);
+    log(`ℹ️ onclose fired after ${dt} ms (user/system closed)`);
+    if (!shown) {
+      log('⚠️ Notification likely suppressed or auto-dismissed by OS.');
+    }
+  };
+
+  n.onerror = (e) => {
+    const dt = (performance.now() - t0).toFixed(2);
+    log(`❌ onerror after ${dt} ms (${e.message || 'display error'})`);
+  };
+
+  // Fallback: if no onshow within 2s, assume suppressed
+  setTimeout(() => {
+    if (!shown) log('⚠️ No onshow within 2s → notification may be blocked or hidden.');
+  }, 2000);
+
+  // 4. === Environment summary ===
+  log('\n[Environment Info]');
   log('navigator.platform:', navigator.platform);
   log('navigator.userAgent:', navigator.userAgent);
-  log('Device vibration support:', 'vibrate' in Notification.prototype);
-  log('Language direction support (dir):', 'dir' in Notification.prototype);
-  log('Supports showTrigger (scheduled):', 'showTrigger' in Notification.prototype);
+  log('Supports showTrigger:', 'showTrigger' in Notification.prototype);
+  log('Supports vibration:', 'vibrate' in Notification.prototype);
 
-  log('\nDemo complete. Compare true/false counts across browsers/OS to see feature differences.');
+  log('\n✅ Demo running — watch the output for timing differences and feature results.');
 };
 </script>
 </body>
