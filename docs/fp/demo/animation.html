@@ -1,154 +1,109 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Web Animations Inspector</title>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      padding: 1.5rem;
-      background: #f5f5f5;
-    }
-    #box {
-      width: 80px;
-      height: 80px;
-      background: #4a90e2;
-      border-radius: 8px;
-      margin-bottom: 1rem;
-    }
-    #controls {
-      margin-bottom: 1rem;
-    }
-    button {
-      margin-right: 0.5rem;
-      padding: 0.25rem 0.75rem;
-      cursor: pointer;
-    }
-    pre {
-      background: #111;
-      color: #eee;
-      padding: 1rem;
-      border-radius: 8px;
-      max-height: 400px;
-      overflow: auto;
-      font-size: 0.85rem;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Animation Timing Difference Demo</title>
+<style>
+  body {
+    font-family: sans-serif;
+    padding: 20px;
+  }
+  #box {
+    width: 40px;
+    height: 40px;
+    background: black;
+    margin-top: 20px;
+  }
+  #chart {
+    margin-top: 20px;
+    white-space: pre;
+    font-family: monospace;
+    background: #f0f0f0;
+    padding: 12px;
+    border-radius: 6px;
+  }
+</style>
 </head>
 <body>
-  <h1>Web Animations Inspector (for debugging)</h1>
 
-  <div id="box"></div>
+<h2>Animation Timing Difference Demo</h2>
+<p>
+This demo visualizes how animation frame timing varies depending on the device, CPU load, browser, and display refresh rate.
+It does <strong>not</strong> store or fingerprint anything—it only shows live measurements on this page.
+</p>
 
-  <div id="controls">
-    <button id="play">Play</button>
-    <button id="pause">Pause</button>
-    <button id="reverse">Reverse</button>
-    <button id="faster">2x Speed</button>
-    <button id="normal">1x Speed</button>
-    <button id="finish">Finish</button>
-  </div>
+<div id="box"></div>
+<div id="chart"></div>
 
-  <pre id="output">(waiting for animation...)</pre>
+<script>
+// Animation target
+const box = document.getElementById("box");
 
-  <script>
-    const box = document.getElementById('box');
-    const output = document.getElementById('output');
+// Run a smooth left-right animation continuously
+const animation = box.animate(
+  [
+    { transform: "translateX(0px)" },
+    { transform: "translateX(400px)" }
+  ],
+  { duration: 1000, iterations: Infinity }
+);
 
-    // Create an animation on the box
-    const animation = box.animate(
-      [
-        { transform: 'translateX(0px)',   background: '#4a90e2' },
-        { transform: 'translateX(300px)', background: '#e94e77' }
-      ],
-      {
-        duration: 2000,
-        iterations: Infinity,
-        direction: 'alternate',
-        easing: 'ease-in-out'
-      }
-    );
+const chart = document.getElementById("chart");
 
-    // Give the animation an id
-    animation.id = 'demo-animation';
+// Store timing samples & intervals
+let lastTime = null;
+let deltas = [];
 
-    // Convenience: get timeline time using either property or method
-    function getTimelineCurrentTime(timeline) {
-      if (!timeline) return null;
-      if (typeof timeline.currentTime === 'number' || timeline.currentTime === null) {
-        return timeline.currentTime;
-      }
-      if (typeof timeline.getCurrentTime === 'function') {
-        return timeline.getCurrentTime();
-      }
-      return null;
-    }
+function loop() {
+  const t = animation.currentTime;
 
-    function updateDisplay() {
-      const effect = animation.effect;
-      const timing = effect ? effect.getTiming() : null;
-      const computedTiming = effect ? effect.getComputedTiming() : null;
-      const timeline = document.timeline || animation.timeline;
+  if (lastTime !== null && t !== null) {
+    const delta = t - lastTime;
+    deltas.push(delta);
+    if (deltas.length > 300) deltas.shift(); // keep last 300 deltas
+  }
 
-      // "Animation.progress" is not a standard property, but the computed
-      // timing info exposes a progress field we can show:
-      const progressFromComputed = computedTiming ? computedTiming.progress : null;
+  lastTime = t;
+  drawStats();
+  requestAnimationFrame(loop);
+}
 
-      const info = {
-        'Animation.id': animation.id,
-        'Animation.playState': animation.playState,
-        'Animation.currentTime': animation.currentTime,
-        'Animation.startTime': animation.startTime,
-        'Animation.playbackRate (via updatePlaybackRate)': animation.playbackRate,
-        'Animation.timeline current time (AnimationTimeline.getCurrentTime)': getTimelineCurrentTime(timeline),
-        'Animation.progress (from getComputedTiming().progress)': progressFromComputed,
-        'Animation.effect exists': !!effect,
-        'AnimationEffect.getTiming()': timing,
-        'AnimationEffect.getComputedTiming()': computedTiming
-      };
+function drawStats() {
+  if (deltas.length < 5) {
+    chart.textContent = "Collecting frame timing data...";
+    return;
+  }
 
-      let text = '';
-      for (const [key, value] of Object.entries(info)) {
-        if (value && typeof value === 'object') {
-          text += `${key}:\n${JSON.stringify(value, null, 2)}\n\n`;
-        } else {
-          text += `${key}: ${value}\n`;
-        }
-      }
+  // Calculate statistics
+  const avg = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  const min = Math.min(...deltas);
+  const max = Math.max(...deltas);
 
-      output.textContent = text;
+  // Build a simple histogram
+  const bins = {};
+  for (let d of deltas) {
+    const b = Math.round(d);
+    bins[b] = (bins[b] || 0) + 1;
+  }
 
-      requestAnimationFrame(updateDisplay);
-    }
+  let hist = "";
+  Object.keys(bins).sort((a, b) => a - b).forEach(bin => {
+    hist += `${bin} ms | ${"#".repeat(bins[bin])}\n`;
+  });
 
-    // Set up controls
-    document.getElementById('play').addEventListener('click', () => {
-      animation.play();
-    });
+  // Display results
+  chart.textContent =
+    "Frame Interval Stats (last ~300 frames)\n" +
+    "--------------------------------------\n" +
+    `Average delta: ${avg.toFixed(2)} ms\n` +
+    `Min delta:     ${min.toFixed(2)} ms\n` +
+    `Max delta:     ${max.toFixed(2)} ms\n\n` +
+    "Histogram of timing intervals:\n" +
+    hist;
+}
 
-    document.getElementById('pause').addEventListener('click', () => {
-      animation.pause();
-    });
-
-    document.getElementById('reverse').addEventListener('click', () => {
-      animation.reverse();
-    });
-
-    document.getElementById('faster').addEventListener('click', () => {
-      animation.updatePlaybackRate(animation.playbackRate * 2);
-    });
-
-    document.getElementById('normal').addEventListener('click', () => {
-      animation.updatePlaybackRate(1);
-    });
-
-    document.getElementById('finish').addEventListener('click', () => {
-      // Jump to the end of the current active interval
-      animation.finish();
-    });
-
-    // Start updating the display
-    requestAnimationFrame(updateDisplay);
-  </script>
+// Start sampling
+loop();
+</script>
 </body>
 </html>
