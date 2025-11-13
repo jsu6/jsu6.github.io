@@ -1,413 +1,84 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>MLGraphBuilder Computation Fingerprint PoC</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 2rem;
-      line-height: 1.5;
-    }
-    button {
-      padding: 0.6rem 1rem;
-      font-size: 1rem;
-      cursor: pointer;
-      border-radius: 0.4rem;
-      border: 1px solid #ccc;
-      background: #f7f7f7;
-    }
-    pre {
-      background: #f4f4f4;
-      padding: 1rem;
-      border-radius: 0.4rem;
-      max-height: 70vh;
-      overflow: auto;
-      font-size: 0.85rem;
-    }
-    .status {
-      margin-top: 0.5rem;
-      font-size: 0.9rem;
-    }
-  </style>
-</head>
+<html>
 <body>
-  <h1>MLGraphBuilder Computation Fingerprint PoC</h1>
-  <p>
-    This demo uses <code>MLGraphBuilder</code> to run small neural-network style
-    computations and derive a fingerprint from:
-  </p>
-  <ul>
-    <li>hashes of the numeric outputs of various ops</li>
-    <li>timing differences between ops</li>
-  </ul>
-  <p>
-    It focuses on <strong>computation-based</strong> differences, not simple
-    feature existence checks.
-  </p>
+<button id="run">Run WebNN Fingerprint</button>
+<pre id="out"></pre>
 
-  <button id="run">Run ML fingerprint</button>
-  <div class="status" id="status"></div>
-  <h2>Results</h2>
-  <pre id="log">(no data yet)</pre>
+<script>
+const out = document.getElementById('out');
 
-  <script>
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('log');
-    const runBtn = document.getElementById('run');
+function hash(arr) {
+  let h = 0|0;
+  for (let v of arr) {
+    const x = Math.fround(v * 1e7) | 0;
+    h = (h * 31 + x) | 0;
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
 
-    // Simple deterministic "hash" of a Float32Array / TypedArray / regular array.
-    function hashArray(arr) {
-      let hash = 0;
-      const len = arr.length || 0;
-      for (let i = 0; i < len; i++) {
-        const v = arr[i];
-        const scaled = Math.fround(v * 1e7); // amplify small diffs
-        hash = (Math.imul(31, hash) + (scaled | 0)) | 0;
-      }
-      // force unsigned and hex encode
-      return (hash >>> 0).toString(16).padStart(8, '0');
-    }
+async function run() {
+  if (!navigator.ml) {
+    out.textContent = "WebNN unavailable";
+    return;
+  }
 
-    function hashBoolArray(arr) {
-      let hash = 0;
-      for (let i = 0; i < arr.length; i++) {
-        const bit = arr[i] ? 1 : 0;
-        hash = (hash * 3 + bit) | 0;
-      }
-      return (hash >>> 0).toString(16).padStart(8, '0');
-    }
+  const ctx = await navigator.ml.createContext();
+  const builder = new MLGraphBuilder(ctx);
 
-    function nowMs() {
-      return (performance && performance.now) ? performance.now() : Date.now();
-    }
+  const results = {};
 
-    async function runFingerprint() {
-      statusEl.textContent = '';
-      logEl.textContent = '';
+  async function testOp(name, buildFn, dims=[1,8]) {
+    try {
+      const desc = { dataType: "float32", dimensions: dims };
+      const input = builder.input("input", desc);
 
-      if (!navigator.ml || typeof navigator.ml.createContext !== 'function') {
-        statusEl.textContent = 'navigator.ml / WebNN is not available in this browser.';
-        return;
-      }
+      // deterministic input
+      const size = dims.reduce((a,b)=>a*b,1);
+      const inp = new Float32Array(size);
+      for (let i=0;i<size;i++) inp[i] = Math.sin(i*0.37);
 
-      runBtn.disabled = true;
-      statusEl.textContent = 'Initializing WebNN context...';
+      const outBuf = new Float32Array(size);
 
-      let context;
-      try {
-        context = await navigator.ml.createContext();
-      } catch (e) {
-        statusEl.textContent = 'Failed to create ML context: ' + (e && e.message);
-        runBtn.disabled = false;
-        return;
-      }
+      const graphOut = buildFn(builder, input);
+      const graph = await builder.build({ output: graphOut });
 
-      const builder = new MLGraphBuilder(context);
-      const results = {};
-      const globalStart = nowMs();
+      const t0 = performance.now();
+      await ctx.compute(graph, { input: inp }, { output: outBuf });
+      const t1 = performance.now();
 
-      // Helper that builds and runs one graph and returns {hash, timeMs, shape}
-      async function runGraph(name, buildFn, ioSpec) {
-        // ioSpec: { inputDesc, outputLength, postProcess }
-        const spec = ioSpec || {};
-        const inputDesc = spec.inputDesc || {
-          type: 'float32',
-          dimensions: [1, 4]
-        };
-
-        // deterministic input data
-        const inputLength = inputDesc.dimensions.reduce((a, b) => a * b, 1);
-        const inputData = new Float32Array(inputLength);
-        for (let i = 0; i < inputLength; i++) {
-          // pseudo-random but deterministic
-          inputData[i] = Math.sin(i * 0.37) * Math.cos(i * 0.13);
-        }
-
-        try {
-          const input = builder.input('input', inputDesc);
-
-          // Let buildFn assemble whatever it wants from the builder and input.
-          const graphOutput = buildFn(builder, input, inputDesc);
-
-          const graph = await builder.build({ output: graphOutput });
-
-          const outputs = {};
-          let outArray;
-
-          const t0 = nowMs();
-          if (spec.outputBool) {
-            // Bool output
-            const outLen = spec.outputLength || inputLength;
-            outArray = new Uint8Array(outLen);
-            outputs.output = outArray;
-          } else if (spec.outputInt) {
-            const outLen = spec.outputLength || inputLength;
-            outArray = new Int32Array(outLen);
-            outputs.output = outArray;
-          } else {
-            const outLen = spec.outputLength || inputLength;
-            outArray = new Float32Array(outLen);
-            outputs.output = outArray;
-          }
-
-          const computeInputs = { input: inputData };
-          await context.compute(graph, computeInputs, outputs);
-          const t1 = nowMs();
-
-          let hash;
-          if (spec.outputBool) {
-            hash = hashBoolArray(outArray);
-          } else {
-            hash = hashArray(outArray);
-          }
-
-          const meta = {
-            hash,
-            timeMs: +(t1 - t0).toFixed(4),
-            outputPreview: Array.from(outArray.slice(0, 8))
-          };
-
-          results[name] = meta;
-        } catch (e) {
-          results[name] = { error: e && e.message ? e.message : String(e) };
-        }
-      }
-
-      // === Individual ops ===
-      // All of these use computations, not simple "feature existence" flags.
-
-      // 1) input + constant + linear
-      await runGraph('linear + relu', (b, input, inputDesc) => {
-        const inLen = inputDesc.dimensions.reduce((a, b) => a * b, 1);
-        const outLen = 8;
-        const weight = new Float32Array(inLen * outLen);
-        const bias = new Float32Array(outLen);
-        for (let i = 0; i < weight.length; i++) {
-          weight[i] = Math.sin(i * 0.11);
-        }
-        for (let i = 0; i < bias.length; i++) {
-          bias[i] = Math.cos(i * 0.07);
-        }
-
-        const weightDesc = {
-          type: 'float32',
-          dimensions: [outLen, inLen]
-        };
-        const biasDesc = {
-          type: 'float32',
-          dimensions: [outLen]
-        };
-
-        const wConst = b.constant(weight, weightDesc);
-        const bConst = b.constant(bias, biasDesc);
-
-        const lin = b.linear(input, wConst, { bias: bConst });
-        return b.relu(lin);
-      }, {
-        inputDesc: { type: 'float32', dimensions: [1, 16] },
-        outputLength: 8
-      });
-
-      // 2) l2Pool2d + maxPool2d + averagePool2d
-      async function poolingGraphs() {
-        const poolInputDesc = {
-          type: 'float32',
-          dimensions: [1, 1, 4, 4] // [N, C, H, W]
-        };
-
-        await runGraph('l2Pool2d', (b, input) => {
-          return b.l2Pool2d(input, {
-            windowDimensions: [2, 2],
-            strides: [2, 2],
-            layout: 'nchw'
-          });
-        }, {
-          inputDesc: poolInputDesc,
-          outputLength: 4
-        });
-
-        await runGraph('maxPool2d', (b, input) => {
-          return b.maxPool2d(input, {
-            windowDimensions: [2, 2],
-            strides: [2, 2],
-            layout: 'nchw'
-          });
-        }, {
-          inputDesc: poolInputDesc,
-          outputLength: 4
-        });
-
-        await runGraph('averagePool2d', (b, input) => {
-          return b.averagePool2d(input, {
-            windowDimensions: [2, 2],
-            strides: [2, 2],
-            layout: 'nchw'
-          });
-        }, {
-          inputDesc: poolInputDesc,
-          outputLength: 4
-        });
-      }
-      await poolingGraphs();
-
-      // 3) Activation functions: relu, sigmoid, tanh, elu, gelu, hardSwish, hardSigmoid, leakyRelu, softplus, softsign
-      const activations = [
-        'relu',
-        'sigmoid',
-        'tanh',
-        'elu',
-        'gelu',
-        'hardSwish',
-        'hardSigmoid',
-        'leakyRelu',
-        'softplus',
-        'softsign'
-      ];
-
-      for (const act of activations) {
-        await runGraph(act, (b, input) => {
-          if (act === 'leakyRelu') {
-            return b.leakyRelu(input, { alpha: 0.1 });
-          }
-          if (act === 'elu') {
-            return b.elu(input, { alpha: 1.0 });
-          }
-          // rely on the method existing; if not, runGraph will catch the error
-          return b[act](input);
-        }, {
-          inputDesc: { type: 'float32', dimensions: [1, 32] }
-        });
-      }
-
-      // 4) Comparison ops: greaterOrEqual, lesserOrEqual (+ logicalNot)
-      async function comparisonGraphs() {
-        const cmpInputDesc = {
-          type: 'float32',
-          dimensions: [1, 16]
-        };
-
-        await runGraph('greaterOrEqual', (b, input) => {
-          const len = cmpInputDesc.dimensions.reduce((a, b) => a * b, 1);
-          const rhsData = new Float32Array(len);
-          for (let i = 0; i < len; i++) {
-            rhsData[i] = (i % 3) - 1; // -1,0,1 pattern
-          }
-          const rhsConst = b.constant(rhsData, cmpInputDesc);
-          return b.greaterOrEqual(input, rhsConst);
-        }, {
-          inputDesc: cmpInputDesc,
-          outputBool: true,
-          outputLength: 16
-        });
-
-        await runGraph('lesserOrEqual', (b, input) => {
-          const len = cmpInputDesc.dimensions.reduce((a, b) => a * b, 1);
-          const rhsData = new Float32Array(len);
-          for (let i = 0; i < len; i++) {
-            rhsData[i] = (i % 5) * 0.25;
-          }
-          const rhsConst = b.constant(rhsData, cmpInputDesc);
-          // some implementations use lessOrEqual; if lesserOrEqual doesn't exist,
-          // this will throw and be recorded as an error.
-          return b.lesserOrEqual
-            ? b.lesserOrEqual(input, rhsConst)
-            : b.lessOrEqual(input, rhsConst);
-        }, {
-          inputDesc: cmpInputDesc,
-          outputBool: true,
-          outputLength: 16
-        });
-
-        await runGraph('logicalNot(greaterOrEqual)', (b, input) => {
-          const len = cmpInputDesc.dimensions.reduce((a, b) => a * b, 1);
-          const rhsData = new Float32Array(len);
-          for (let i = 0; i < len; i++) {
-            rhsData[i] = 0; // compare to zero
-          }
-          const rhsConst = b.constant(rhsData, cmpInputDesc);
-          const ge = b.greaterOrEqual(input, rhsConst);
-          return b.logicalNot(ge);
-        }, {
-          inputDesc: cmpInputDesc,
-          outputBool: true,
-          outputLength: 16
-        });
-      }
-      await comparisonGraphs();
-
-      // 5) argMax / argMin on a 2D tensor
-      async function argGraphs() {
-        const argInputDesc = {
-          type: 'float32',
-          dimensions: [4, 8] // 4 rows
-        };
-
-        await runGraph('argMax_axis1', (b, input) => {
-          return b.argMax(input, { axis: 1 });
-        }, {
-          inputDesc: argInputDesc,
-          outputInt: true,  // indices are ints
-          outputLength: 4
-        });
-
-        await runGraph('argMin_axis1', (b, input) => {
-          return b.argMin(input, { axis: 1 });
-        }, {
-          inputDesc: argInputDesc,
-          outputInt: true,
-          outputLength: 4
-        });
-      }
-      await argGraphs();
-
-      // 6) clamp
-      await runGraph('clamp', (b, input) => {
-        return b.clamp(input, { minValue: -0.25, maxValue: 0.5 });
-      }, {
-        inputDesc: { type: 'float32', dimensions: [1, 32] }
-      });
-
-      const globalEnd = nowMs();
-      const totalTime = +(globalEnd - globalStart).toFixed(4);
-
-      // Combine individual hashes into a single fingerprint string
-      const opNames = Object.keys(results).sort();
-      let combined = '';
-      for (const name of opNames) {
-        const r = results[name];
-        if (r && r.hash) {
-          combined += name + ':' + r.hash + ';';
-        }
-      }
-      const finalFingerprint = hashArray(
-        new Float32Array(
-          combined.split('').map(c => c.charCodeAt(0) / 255)
-        )
-      );
-
-      const output = {
-        environment: {
-          userAgent: navigator.userAgent,
-          webnnAvailable: true
-        },
-        perOp: results,
-        combinedFingerprint: finalFingerprint,
-        totalTimeMs: totalTime
+      results[name] = {
+        hash: hash(outBuf),
+        timeMs: +(t1 - t0).toFixed(4)
       };
-
-      statusEl.textContent = 'Done. Computation-based fingerprint generated.';
-      logEl.textContent = JSON.stringify(output, null, 2);
-
-      runBtn.disabled = false;
+    } catch (e) {
+      results[name] = { error: e.message };
     }
+  }
 
-    runBtn.addEventListener('click', () => {
-      runFingerprint().catch(err => {
-        statusEl.textContent = 'Unexpected error: ' + (err && err.message ? err.message : String(err));
-        runBtn.disabled = false;
-      });
-    });
-  </script>
+  // ---------- ACTUAL OPS ----------
+  await testOp("relu", (b, x) => b.relu(x));
+  await testOp("sigmoid", (b, x) => b.sigmoid(x));
+  await testOp("tanh", (b, x) => b.tanh(x));
+
+  // linear model (weights using valid descriptors)
+  await testOp("linear", (b, x) => {
+    const w = new Float32Array(64);
+    for (let i=0;i<w.length;i++) w[i] = Math.sin(i*0.11);
+
+    const bias = new Float32Array(8);
+    const wDesc = { dataType: "float32", dimensions: [8, 8] };
+    const bDesc = { dataType: "float32", dimensions: [8] };
+
+    const Wc = b.constant(w, wDesc);
+    const Bc = b.constant(bias, bDesc);
+
+    return b.linear(x, Wc, { bias: Bc });
+  });
+
+  out.textContent = JSON.stringify(results, null, 2);
+}
+
+document.getElementById('run').onclick = run;
+</script>
 </body>
 </html>
