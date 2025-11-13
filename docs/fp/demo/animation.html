@@ -1,150 +1,54 @@
-<!doctype html>
-<meta charset="utf-8">
-<title>Animation Timing Fingerprinting — Execution Characteristics</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding:18px; max-width:1100px; }
-  h1 { font-size:20px; margin-bottom:8px; }
-  button { padding:8px 14px; margin:4px; border:1px solid #ccc; border-radius:6px; background:#fafafa; cursor:pointer; }
-  table { border-collapse:collapse; width:100%; margin-top:10px; }
-  th,td { border:1px solid #ddd; padding:5px 8px; font-size:13px; vertical-align:top; }
-  th { background:#f5f5f5; text-align:left; }
-  pre { background:#f9f9f9; border:1px solid #ddd; padding:8px; overflow:auto; max-height:240px; }
-  .fp { background:#ffe9e9; }
-  #box { width:25px; height:25px; background:#69f; position:absolute; }
-  #preview { width:120px; height:25px; background:#eee; overflow:hidden; position:relative; margin-top:8px; }
-</style>
-
-<h1>Animation Timing Fingerprinting — Execution Characteristics</h1>
-<p style="font-size:13px;color:#666">
-This test focuses on timing behavior of the <code>Animation</code> and <code>AnimationEffect</code> APIs.<br>
-It records per-round timing features (<b>frame rate, quantization, start-time skew, computed progress drift</b>) 
-that tend to be stable per device and browser engine.
-</p>
-
-<div>
-  <button id="runBtn">Run 10 Rounds</button>
-  <span id="status" style="font-size:12px;margin-left:10px;">idle</span>
-</div>
-<div id="preview"><div id="box"></div></div>
-
-<table id="summary">
-<thead>
-<tr>
-<th>Round</th>
-<th class="fp">Frame Δ mean (ms)</th>
-<th class="fp">Frame Δ std (ms)</th>
-<th class="fp">startTime skew</th>
-<th class="fp">timeline.getCurrentTime()</th>
-<th class="fp">progress drift</th>
-<th>playbackRate</th>
-<th>nominal duration</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
-
-<h3>Detail (last round)</h3>
-<pre id="detail"></pre>
-
+<!DOCTYPE html>
+<body>
 <script>
-(async()=>{
-const $=s=>document.querySelector(s);
-const runBtn=$("#runBtn"),status=$("#status"),box=$("#box"),tbody=$("#summary tbody"),detail=$("#detail");
+// Create a small animation to observe timing behavior
+const box = document.createElement("div");
+box.style.width = "20px";
+box.style.height = "20px";
+box.style.background = "black";
+document.body.appendChild(box);
 
-runBtn.onclick=async()=>{
-  runBtn.disabled=true; tbody.innerHTML=""; detail.textContent=""; status.textContent="running…";
-  const rounds=10;
-  for(let i=0;i<rounds;i++){
-    const res=await runOnce(i);
-    addRow(i,res);
-    await new Promise(r=>setTimeout(r,250));
+// Animate it
+const animation = box.animate(
+  [{ transform: "translateX(0px)" }, { transform: "translateX(100px)" }],
+  { duration: 1000, iterations: Infinity }
+);
+
+// Collect timing observations
+let samples = [];
+
+function sample() {
+  // currentTime is tied to device refresh rate and animation timeline
+  const t = animation.currentTime;
+
+  if (t != null) {
+    samples.push(t);
   }
-  status.textContent="done"; runBtn.disabled=false;
-};
 
-async function runOnce(i){
-  const dur=800+Math.random()*200;
-  const anim=box.animate(
-    [{transform:'translateX(0px)'},{transform:`translateX(${100+i*5}px)`}],
-    {duration:dur,easing:'linear'}
-  );
-  const eff=anim.effect;
-  await anim.ready.catch(()=>{});
-
-  const deltas=[],frames=150; let last;
-  let tStart=performance.now();
-  await new Promise(r=>{
-    function tick(t){
-      if(last) deltas.push(t-last);
-      last=t;
-      if(deltas.length<frames) requestAnimationFrame(tick); else r();
-    }
-    requestAnimationFrame(tick);
-  });
-  const tEnd=performance.now();
-
-  // Basic timing stats
-  const mean=avg(deltas);
-  const std=Math.sqrt(deltas.map(x=>(x-mean)**2).reduce((a,b)=>a+b,0)/deltas.length);
-  const frameRate=(1000/mean).toFixed(2);
-
-  // startTime vs timeline time skew
-  const timelineNow=document.timeline.getCurrentTime?.() ?? document.timeline.currentTime;
-  const skew=(anim.startTime && timelineNow)?(anim.startTime - timelineNow):null;
-
-  // Playback rate perturbation
-  const rate=1+Math.random()*0.5;
-  anim.updatePlaybackRate(rate);
-
-  // Effect timing information
-  const baseTiming=eff.getTiming();
-  eff.updateTiming({duration:baseTiming.duration*(1+Math.random()*0.1)});
-  const compBefore=eff.getComputedTiming();
-  await new Promise(r=>setTimeout(r,50));
-  const compAfter=eff.getComputedTiming();
-  const drift=compAfter.progress - compBefore.progress;
-
-  // Finish cleanup
-  try{await anim.finished;}catch{}
-  anim.commitStyles?.(); anim.cancel?.();
-
-  const res={
-    meanDelta:mean,
-    stdDelta:std,
-    frameRate,
-    startTime:anim.startTime,
-    skew,
-    timelineNow,
-    progressDrift:drift,
-    playbackRate:anim.playbackRate,
-    nominalDuration:baseTiming.duration,
-    totalTime:(tEnd-tStart)
-  };
-  detail.textContent=JSON.stringify(res,null,2);
-  return res;
+  if (samples.length < 200) {
+    requestAnimationFrame(sample);
+  } else {
+    analyze(samples);
+  }
 }
 
-function addRow(i,r){
-  const tr=document.createElement("tr");
-  tr.innerHTML=`
-    <td>${i+1}</td>
-    <td class="fp">${fmt(r.meanDelta)}</td>
-    <td class="fp">${fmt(r.stdDelta)}</td>
-    <td class="fp">${fmt(r.skew)}</td>
-    <td class="fp">${fmt(r.timelineNow)}</td>
-    <td class="fp">${fmt(r.progressDrift)}</td>
-    <td>${fmt(r.playbackRate)}</td>
-    <td>${fmt(r.nominalDuration)}</td>`;
-  tbody.appendChild(tr);
+function analyze(samples) {
+  let deltas = [];
+
+  for (let i = 1; i < samples.length; i++) {
+    deltas.push(samples[i] - samples[i - 1]);
+  }
+
+  console.log("Observed frame deltas:", deltas);
+  console.log("Average delta:", avg(deltas));
+  console.log("Min/max delta:", Math.min(...deltas), Math.max(...deltas));
 }
 
-function fmt(x){
-  if(x===undefined) return "n/a";
-  if(x===null) return "null";
-  if(typeof x==="number") return x.toFixed(3);
-  return String(x);
+function avg(arr) {
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
-function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0;}
-})();
+
+// Start sampling
+sample();
 </script>
+</body>
