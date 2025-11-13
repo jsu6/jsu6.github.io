@@ -1,136 +1,145 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Animation API Fingerprinting — Stability Test (Full API)</title>
+<title>Animation API Fingerprinting — Direct Output</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  :root { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; }
-  body { padding:18px; max-width:1100px; }
-  h1 { font-size:20px; margin-bottom:8px; }
+  body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:18px; max-width:1000px; }
+  h1 { font-size:20px; margin-bottom:6px; }
   button { padding:8px 14px; margin:4px; border:1px solid #ccc; border-radius:6px; background:#fafafa; cursor:pointer; }
   table { border-collapse:collapse; width:100%; margin-top:10px; }
-  th,td { border:1px solid #ddd; padding:5px 8px; font-size:13px; vertical-align:top; }
+  th,td { border:1px solid #ddd; padding:4px 6px; font-size:13px; vertical-align:top; }
   th { background:#f5f5f5; text-align:left; }
-  pre { background:#f9f9f9; border:1px solid #ddd; padding:8px; overflow:auto; max-height:240px; }
-  .ok { color:#080; font-weight:600; }
-  .warn { color:#c70; font-weight:600; }
-  .bad { color:#c00; font-weight:600; }
-  #box { width:20px; height:20px; background:#69f; position:absolute; }
-  #preview { width:120px; height:20px; background:#eee; overflow:hidden; position:relative; margin-top:8px; }
+  pre { background:#f9f9f9; border:1px solid #ddd; padding:8px; overflow:auto; max-height:220px; }
+  #box { width:30px; height:30px; background:#69f; position:absolute; }
+  #preview { width:120px; height:30px; background:#eee; overflow:hidden; position:relative; margin-top:8px; }
 </style>
 
-<h1>Animation API Fingerprinting — Stability Test (Full API)</h1>
+<h1>Animation API Fingerprinting — Direct Output</h1>
 <p style="font-size:13px;color:#666">
-Runs 10 rounds of Animation API operations and computes hashes based on timing and animation properties.  
-It uses <code>Animation</code>, <code>AnimationEffect</code>, and <code>AnimationTimeline</code> features to highlight device-specific stability.
+Runs 10 rounds of the Animation API and records the raw outputs from key animation properties and methods.  
+Differences across rounds or browsers may indicate fingerprintable timing behavior.
 </p>
 
 <div>
   <button id="runBtn">Run 10 Rounds</button>
-  <button id="busyBtn">Inject 200 ms Main-Thread Jank</button>
   <span id="status" style="font-size:12px;margin-left:10px;">idle</span>
 </div>
+
 <div id="preview"><div id="box"></div></div>
 
-<table id="summary"><thead>
-<tr><th>Round</th><th>Hash</th><th>Mean Δ (ms)</th><th>Std Δ (ms)</th><th>Refresh (Hz)</th></tr>
-</thead><tbody></tbody></table>
+<table id="summary">
+<thead>
+<tr>
+<th>Round</th>
+<th>startTime</th>
+<th>playbackRate (after update)</th>
+<th>getTiming().duration</th>
+<th>getComputedTiming().progress</th>
+<th>updateTiming() duration</th>
+<th>timeline.getCurrentTime()</th>
+<th>Worklet Registered</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
 
-<h3>Stability Score</h3>
-<pre id="score"></pre>
-
-<h3>Detail (JSON of Last Round)</h3>
+<h3>Raw Detail (last round)</h3>
 <pre id="detail"></pre>
 
 <script>
 (async()=>{
 const $=s=>document.querySelector(s);
-const runBtn=$("#runBtn"),busyBtn=$("#busyBtn"),status=$("#status");
-const outTBody=$("#summary tbody"),detail=$("#detail"),scoreEl=$("#score"),box=$("#box");
-
-busyBtn.onclick=()=>{const e=performance.now()+200;while(performance.now()<e){}};
+const runBtn=$("#runBtn"),status=$("#status"),box=$("#box"),tbody=$("#summary tbody"),detail=$("#detail");
 
 runBtn.onclick=async()=>{
-  runBtn.disabled=true; outTBody.innerHTML=""; scoreEl.textContent=""; detail.textContent="";
-  status.textContent="running…";
-  const rounds=10, hashes=[], metrics=[];
-  for(let i=0;i<rounds;i++){
-    const res=await measureOnce(i);
-    hashes.push(res.hash); metrics.push(res);
-    addRow(i+1,res.hash,res.rAF.mean,res.rAF.std,res.rAF.hz);
-    await new Promise(r=>setTimeout(r,300));
+  runBtn.disabled=true; tbody.innerHTML=""; detail.textContent=""; status.textContent="running…";
+  for(let i=0;i<10;i++){
+    const res=await runOnce(i);
+    addRow(i,res);
+    await new Promise(r=>setTimeout(r,200));
   }
-  const stable=stabilityScore(hashes);
-  const note= stable>90?"ok": stable>70?"warn":"bad";
-  scoreEl.innerHTML=`Hash stability score: ${stable.toFixed(1)}% <span class="${note}">(${note})</span>\n\nHashes:\n${hashes.join("\n")}`;
-  detail.textContent=JSON.stringify(metrics[metrics.length-1],null,2);
-  status.textContent="done"; runBtn.disabled=false;
+  status.textContent="done";
+  runBtn.disabled=false;
 };
 
-function addRow(i,h,mean,std,hz){
-  const tr=document.createElement("tr");
-  tr.innerHTML=`<td>${i}</td><td style="font-family:monospace">${h.slice(0,16)}…</td>
-  <td>${round(mean)}</td><td>${round(std)}</td><td>${hz}</td>`;
-  outTBody.appendChild(tr);
-}
-
-async function measureOnce(idx){
+async function runOnce(i){
   // Create animation
   const anim=box.animate(
-    [{transform:'translateX(0px)'},{transform:`translateX(${100+idx*2}px)`}],
-    {duration:1000+idx*10,easing:'ease-in-out',iterations:1}
+    [{transform:'translateX(0px)'},{transform:`translateX(${100+i*5}px)`}],
+    {duration:800+Math.random()*200,easing:'ease-in-out'}
   );
-  anim.id=`round-${idx}`;
-  const info={round:idx,playState:[],timeline:[],effectData:{}};
+
+  const result={round:i};
+  await anim.ready.catch(()=>{});
+
+  // Record startTime
+  result.startTime=anim.startTime;
+
+  // Update playback rate
+  const newRate=1+Math.random()*0.5;
+  anim.updatePlaybackRate(newRate);
+  result.playbackRate=anim.playbackRate;
+
+  // AnimationEffect methods
   const eff=anim.effect;
+  result.getTiming=eff?.getTiming?.();
+  result.getComputedTiming=eff?.getComputedTiming?.();
 
-  // Play and collect
-  const deltas=[],frames=120;let last;
-  anim.play();
-  for(let i=0;i<frames;i++){
-    const t=await new Promise(r=>requestAnimationFrame(r));
-    if(last) deltas.push(t-last); last=t;
-    info.playState.push(anim.playState);
-    info.timeline.push(document.timeline?.getCurrentTime?.() ?? null);
+  // Update timing randomly
+  const newDur=(result.getTiming?.duration||800)+Math.random()*150;
+  eff?.updateTiming?.({duration:newDur});
+  result.updateTimingDuration=newDur;
+
+  // Timeline currentTime
+  let timelineNow=null;
+  try{
+    timelineNow=document.timeline.getCurrentTime?.() ?? document.timeline.currentTime;
+  }catch(e){timelineNow="error";}
+  result.timelineTime=timelineNow;
+
+  // AnimationWorkletGlobalScope.registerAnimator test
+  let workletOk=false;
+  if(CSS && "animationWorklet" in CSS && "addModule" in CSS.animationWorklet && window.WorkletAnimation){
+    try{
+      const src=`registerAnimator('dummy',class{animate(){} });`;
+      const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
+      await CSS.animationWorklet.addModule(url);
+      workletOk=true;
+    }catch{ workletOk=false; }
+  }else{
+    workletOk="n/a";
   }
+  result.workletRegistered=workletOk;
 
-  // Use more APIs
-  anim.pause(); info.pauseTime=anim.currentTime;
-  anim.updatePlaybackRate(1+Math.random()*0.5);
-  anim.play();
-  eff.updateTiming({duration:1000+Math.random()*200});
-  info.effectData.getTiming=eff.getTiming();
-  info.effectData.computed=eff.getComputedTiming();
+  // Finish and cleanup
+  try{await anim.finished;}catch{}
+  anim.commitStyles?.();
+  anim.cancel?.();
 
-  anim.reverse(); await new Promise(r=>setTimeout(r,50)); anim.play();
-  try { await anim.finished; } catch {}
-  anim.commitStyles(); anim.cancel();
-
-  // Stats
-  const s=stats(deltas); const hz=Math.round(1000/s.mean);
-  const res={rAF:{mean:s.mean,std:s.std,hz},anim};
-  const hash=await hashObj({...res,...info});
-  return {...res,info,hash};
+  // Output
+  detail.textContent=JSON.stringify(result,null,2);
+  return result;
 }
 
-function stats(a){const c=a.filter(x=>isFinite(x));const n=c.length;
-  const mean=c.reduce((a,b)=>a+b,0)/n;
-  const v=c.reduce((a,b)=>a+(b-mean)**2,0)/n;
-  const std=Math.sqrt(v);return{mean,std,n};
+function addRow(i,res){
+  const tr=document.createElement("tr");
+  tr.innerHTML=`
+    <td>${i+1}</td>
+    <td>${fmt(res.startTime)}</td>
+    <td>${fmt(res.playbackRate)}</td>
+    <td>${fmt(res.getTiming?.duration)}</td>
+    <td>${fmt(res.getComputedTiming?.progress)}</td>
+    <td>${fmt(res.updateTimingDuration)}</td>
+    <td>${fmt(res.timelineTime)}</td>
+    <td>${fmt(res.workletRegistered)}</td>`;
+  tbody.appendChild(tr);
 }
-async function hashObj(o){
-  const data=new TextEncoder().encode(JSON.stringify(o));
-  const b=await crypto.subtle.digest("SHA-256",data);
-  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");
+
+function fmt(x){
+  if(x===undefined) return "n/a";
+  if(x===null) return "null";
+  if(typeof x==="number") return x.toFixed(3);
+  return String(x);
 }
-function stabilityScore(hs){
-  if(hs.length<2)return 100;
-  const base=hs[0].split("");let total=0,diff=0;
-  for(let i=1;i<hs.length;i++){
-    const cur=hs[i].split("");
-    for(let j=0;j<base.length;j++){total++;if(base[j]!==cur[j])diff++;}
-  }
-  return 100*(1-diff/total);
-}
-function round(x){return x?Math.round(x*1000)/1000:"";}
 })();
 </script>
