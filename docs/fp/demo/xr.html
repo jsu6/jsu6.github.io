@@ -1,157 +1,266 @@
 <!doctype html>
-<meta charset="utf-8" />
-<title>WebXR Fingerprinting Proof of Concept</title>
+<meta charset="utf-8">
+<title>WebXR Fingerprinting PoC – Advanced</title>
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; padding: 1rem; max-width: 1000px; margin: auto; }
-  button { padding: .5rem .9rem; margin-right: .4rem; }
-  table { border-collapse: collapse; margin-top: 1rem; width: 100%; }
-  th, td { border: 1px solid #ccc; padding: .4rem .6rem; text-align: left; }
-  th { background: #f3f3f3; }
-  .ok { color: #008000; }
-  .err { color: #b00020; }
-  .warn { color: #a15a00; }
-  #status { margin-left: .5rem; }
-  pre { background: #fafafa; padding: .8rem; border: 1px solid #eee; overflow: auto; }
+  body { font-family: system-ui, sans-serif; padding: 20px; max-width: 900px; margin: auto; }
+  button { padding: 10px 16px; margin-right: 8px; }
+  #status { margin-left: 8px; }
+  table { width:100%; border-collapse: collapse; margin-top:20px; }
+  th, td { border:1px solid #ccc; padding:6px 10px; text-align:left; }
+  th { background:#eee; }
+  .ok { color:#0a7f2e; }
+  .warn { color:#a15a00; }
+  .err { color:#b00020; }
+  pre { background:#f6f7f9; padding:12px; border:1px solid #ddd; overflow:auto; margin-top:20px; }
 </style>
 
-<h1>WebXR Fingerprinting Proof of Concept</h1>
-<p>
-  This demo probes WebXR interfaces and shows how their presence, numeric values, or errors
-  can serve as potential fingerprinting signals, even without real XR hardware.
-</p>
-<button id="run">Run</button>
-<button id="copy">Copy JSON</button>
-<span id="status"></span>
+<h1>WebXR Fingerprinting PoC – Advanced</h1>
+<p>This demo follows the engine of the <a href="https://immersive-web.github.io/webxr-samples/tests/">WebXR test-pages</a> and then additionally probes many APIs for fingerprintable values.</p>
+
+<button id="run">Run PoC</button>
+<button id="copy">Copy JSON</button><span id="status"></span>
+
 <div id="results"></div>
-<pre id="raw"></pre>
+<pre id="raw">Ready.</pre>
 
 <script>
-(async () => {
-  const status = document.getElementById("status");
-  const resultsEl = document.getElementById("results");
-  const raw = document.getElementById("raw");
-  const setStatus = (t, cls="") => { status.textContent = t; status.className = cls; };
-
-  function safe(fn) {
-    try {
-      const v = fn();
-      if (v && typeof v.then === "function") return v.then(val => ({ok:true,value:val}))
-        .catch(e => ({ok:false,error:String(e),name:e?.name}));
-      return {ok:true,value:v};
-    } catch(e){ return {ok:false,error:String(e),name:e?.name}; }
-  }
-
-  async function run() {
-    setStatus("Running…","warn");
-    const res = { env:{ ua:navigator.userAgent, platform:navigator.platform }, fp:[], raw:{} };
-
-    if(!navigator.xr){
-      res.fp.push({api:"navigator.xr",status:"missing",value:"",impact:"high"});
-      finalize(res); return;
-    }
-
-    const inlineSupported = await navigator.xr.isSessionSupported("inline").catch(()=>false);
-    res.fp.push({api:"isSessionSupported(inline)",status:inlineSupported?"ok":"fail",impact:"high"});
-
-    if(!inlineSupported){ finalize(res); return; }
-
-    const sessionReq = await safe(()=>navigator.xr.requestSession("inline",{optionalFeatures:[
-      "anchors","hit-test","hand-tracking","light-estimation","plane-detection","depth-sensing","image-tracking"
-    ]}));
-    if(!sessionReq.ok){ res.fp.push({api:"requestSession",status:"error",value:sessionReq.error,impact:"high"}); finalize(res); return; }
-    const session=sessionReq.value;
-
-    const refSpaceReq = await safe(()=>session.requestReferenceSpace("viewer"));
-    const refSpace = refSpaceReq.ok?refSpaceReq.value:null;
-
-    const canvas=document.createElement("canvas");
-    const gl=canvas.getContext("webgl",{xrCompatible:true});
-    await gl?.makeXRCompatible?.();
-    const layer=new XRWebGLLayer(session,gl);
-    session.updateRenderState({baseLayer:layer});
-
-    // Quick constructor fingerprints
-    if("XRRay" in window){
-      const r=new XRRay();
-      res.fp.push({api:"XRRay.matrix.length",status:"ok",value:r.matrix.length,impact:"low"});
-    } else res.fp.push({api:"XRRay",status:"missing",impact:"low"});
-
-    if("XRRigidTransform" in window){
-      const t=new XRRigidTransform();
-      res.fp.push({api:"XRRigidTransform.inverse",status:t.inverse?"ok":"missing",impact:"medium"});
-    }
-
-    // one frame only
-    session.requestAnimationFrame(async (time,frame)=>{
-      try{
-        const pose=frame.getViewerPose(refSpace);
-        if(pose){
-          res.fp.push({api:"XRView.eye",status:"ok",value:pose.views[0]?.eye,impact:"medium"});
-          const vp=layer.getViewport(pose.views[0]);
-          res.fp.push({api:"XRWebGLLayer.getViewport",status:"ok",value:`${vp.width}x${vp.height}`,impact:"high"});
-        } else res.fp.push({api:"getViewerPose",status:"fail",impact:"high"});
-
-        // Depth
-        try{
-          const d=frame.getDepthInformation?.(pose?.views?.[0]);
-          if(d) res.fp.push({api:"XRDepthInformation",status:"ok",
-              value:`${d.width}×${d.height}`,impact:"high"});
-          else res.fp.push({api:"XRDepthInformation",status:"missing",impact:"high"});
-        }catch(e){ res.fp.push({api:"XRDepthInformation",status:"error",value:String(e),impact:"high"}); }
-
-        // Anchor
-        if(frame.createAnchor && refSpace){
-          const a=await safe(()=>frame.createAnchor(new XRRigidTransform(),refSpace));
-          res.fp.push({api:"XRFrame.createAnchor",status:a.ok?"ok":"fail",impact:"medium"});
+  (async () => {
+    const statusEl = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+    const rawEl = document.getElementById('raw');
+    const setStatus = (text, cls='') => { statusEl.textContent = text; statusEl.className = cls; };
+    const safeCall = fn => {
+      try {
+        const v = fn();
+        if (v && typeof v.then === 'function') {
+          return v.then(res => ({ ok: true, value: res }))
+                  .catch(e => ({ ok: false, error: String(e), name: e?.name }));
         }
-
-        // Hand/joints
-        try{
-          const src=session.inputSources.find(s=>s.hand);
-          res.fp.push({api:"XRHand",status:src?"ok":"none",impact:"medium"});
-          if(src?.hand) res.fp.push({api:"XRHand.size",status:"ok",value:src.hand.size,impact:"low"});
-        }catch(e){res.fp.push({api:"XRHand",status:"error",value:String(e),impact:"medium"});}
-
-        // Plane detection
-        try{
-          const planes=frame.worldInformation?.detectedPlanes;
-          res.fp.push({api:"XRPlane",status:planes?"ok":"none",impact:"medium"});
-          const p=planes?.values().next().value;
-          if(p) res.fp.push({api:"XRPlane.polygon.length",status:"ok",value:p.polygon?.length,impact:"low"});
-        }catch(e){res.fp.push({api:"XRPlane",status:"error",value:String(e),impact:"medium"});}
-
-        await session.end();
-        finalize(res);
-      }catch(e){
-        res.fp.push({api:"frame",status:"error",value:String(e),impact:"high"});
-        await session.end();
-        finalize(res);
+        return { ok: true, value: v };
+      } catch(e) {
+        return { ok: false, error: String(e), name: e?.name };
       }
-    });
-  }
+    };
 
-  function finalize(res){
-    setStatus("Finished.","ok");
-    const rows = res.fp.map(r=>`
-      <tr>
-        <td>${r.api}</td>
-        <td class="${r.status==='ok'?'ok':r.status==='error'?'err':'warn'}">${r.status}</td>
-        <td>${r.value??''}</td>
-        <td>${r.impact}</td>
-      </tr>`).join("");
-    resultsEl.innerHTML = `
-      <h3>Fingerprinting Signals</h3>
-      <table>
-        <tr><th>API</th><th>Status</th><th>Value / Error</th><th>Entropy Impact</th></tr>
-        ${rows}
-      </table>`;
-    raw.textContent = JSON.stringify(res, null, 2);
-  }
+    async function runPoC() {
+      setStatus('Running…','warn');
+      const data = {
+        env: {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          secureContext: window.isSecureContext
+        },
+        fingerprint: [],
+        raw: {}
+      };
 
-  document.getElementById("run").onclick = run;
-  document.getElementById("copy").onclick = async ()=>{
-    try{ await navigator.clipboard.writeText(raw.textContent);
-      setStatus("Copied JSON","ok"); }catch{ setStatus("Copy failed","warn"); }
-  };
-})();
+      // Basic presence checks
+      if (!navigator.xr) {
+        data.fingerprint.push({ api:'navigator.xr', status:'missing', value:null, impact:'high' });
+        finalize(data);
+        return;
+      } else {
+        data.fingerprint.push({ api:'navigator.xr', status:'ok', value:null, impact:'high' });
+      }
+
+      const inlineSupport = await navigator.xr.isSessionSupported('inline').catch(() => false);
+      data.fingerprint.push({ api:'XRSession.inlineSupport', status:inlineSupport ? 'ok' : 'fail', value:inlineSupport, impact:'high' });
+      if (!inlineSupport) {
+        finalize(data);
+        return;
+      }
+
+      const sessionReq = await safeCall(() =>
+        navigator.xr.requestSession('inline', {
+          optionalFeatures: ['anchors','hit-test','hand-tracking','light-estimation','plane-detection','depth-sensing','image-tracking']
+        })
+      );
+      if (!sessionReq.ok) {
+        data.fingerprint.push({ api:'requestSession(inline)', status:'error', value: sessionReq.error, impact:'high' });
+        finalize(data);
+        return;
+      }
+      const session = sessionReq.value;
+      data.raw.session = session;
+
+      // Reference space
+      const refReq = await safeCall(() => session.requestReferenceSpace('viewer'));
+      const refSpace = refReq.ok ? refReq.value : null;
+      data.fingerprint.push({ api:'requestReferenceSpace(viewer)', status: refReq.ok ? 'ok' : 'fail', value: refReq.ok ? refSpace.constructor.name : refReq.error, impact:'medium' });
+
+      // WebGL & XRWebGLLayer setup
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl', { xrCompatible: true }) || canvas.getContext('experimental-webgl');
+      if (!gl) {
+        data.fingerprint.push({ api:'WebGL context (xrCompatible)', status:'fail', value:null, impact:'high' });
+      } else {
+        await gl.makeXRCompatible?.();
+        const layer = new XRWebGLLayer(session, gl);
+        await safeCall(() => session.updateRenderState({ baseLayer: layer }));
+        data.raw.layer = layer;
+
+        data.fingerprint.push({ api:'XRWebGLLayer.getViewport', status:'pending', value:null, impact:'high' });
+
+        // One frame, then end
+        session.requestAnimationFrame(async (time, frame) => {
+          try {
+            const pose = frame.getViewerPose(refSpace);
+            if (pose && pose.views && pose.views.length > 0) {
+              const view = pose.views[0];
+              const vp = layer.getViewport(view);
+              data.fingerprint.push({ api:'XRWebGLLayer.getViewport', status:'ok', value:`${vp.width}×${vp.height}`, impact:'high' });
+              data.fingerprint.push({ api:'XRView.eye', status:'ok', value:view.eye, impact:'medium' });
+            } else {
+              data.fingerprint.push({ api:'getViewerPose', status:'fail', value:null, impact:'high' });
+            }
+
+            // Depth info
+            try {
+              const d = frame.getDepthInformation?.(pose?.views[0]);
+              if (d) {
+                data.fingerprint.push({ api:'XRDepthInformation.width', status:'ok', value:d.width, impact:'high' });
+                data.fingerprint.push({ api:'XRDepthInformation.height', status:'ok', value:d.height, impact:'high' });
+                data.fingerprint.push({ api:'XRDepthInformation.rawValueToMeters', status: typeof d.rawValueToMeters === 'function' ? 'ok' : 'missing', value:null, impact:'high' });
+                data.fingerprint.push({ api:'XRDepthInformation.normDepthBufferFromNormView', status: typeof d.normDepthBufferFromNormView === 'function' ? 'ok' : 'missing', value:null, impact:'high' });
+              } else {
+                data.fingerprint.push({ api:'XRDepthInformation', status:'missing', value:null, impact:'high' });
+              }
+            } catch(e) {
+              data.fingerprint.push({ api:'XRDepthInformation', status:'error', value:String(e), impact:'high' });
+            }
+
+            // Anchor
+            if (frame.createAnchor && refSpace) {
+              const anchorReq = await safeCall(() => frame.createAnchor(new XRRigidTransform(), refSpace));
+              data.fingerprint.push({ api:'XRFrame.createAnchor', status:anchorReq.ok ? 'ok' : 'fail', value: anchorReq.ok ? anchorReq.value.constructor.name : anchorReq.error, impact:'medium' });
+              if (anchorReq.ok) {
+                await safeCall(() => anchorReq.value.delete());
+                data.fingerprint.push({ api:'XRAnchor.delete', status:'ok', value:null, impact:'medium' });
+              }
+            } else {
+              data.fingerprint.push({ api:'XRFrame.createAnchor', status:'missing', value:null, impact:'medium' });
+            }
+
+            // Hit Test Source
+            if (session.requestHitTestSource) {
+              const hReq = await safeCall(() => session.requestHitTestSource({ space: refSpace }));
+              data.fingerprint.push({ api:'XRHitTestSource.request', status:hReq.ok ? 'ok' : 'fail', value:hReq.ok ? hReq.value.constructor.name : hReq.error, impact:'medium' });
+              if (hReq.ok) {
+                const cancelReq = await safeCall(() => hReq.value.cancel());
+                data.fingerprint.push({ api:'XRHitTestSource.cancel', status:cancelReq.ok ? 'ok' : 'fail', value: cancelReq.ok ? null : cancelReq.error, impact:'medium' });
+              }
+            } else {
+              data.fingerprint.push({ api:'XRHitTestSource.cancel', status:'missing', value:null, impact:'medium' });
+            }
+
+            // Light Estimate
+            if (session.requestLightProbe) {
+              const lpReq = await safeCall(() => session.requestLightProbe());
+              data.fingerprint.push({ api:'requestLightProbe', status: lpReq.ok ? 'ok' : 'fail', value: lpReq.ok ? lpReq.value.constructor.name : lpReq.error, impact:'medium' });
+              if (lpReq.ok) {
+                const le = frame.getLightEstimate?.(lpReq.value);
+                if (le) {
+                  data.fingerprint.push({ api:'XRLightEstimate.primaryLightIntensity', status:'ok', value: Array.from(le.primaryLightIntensity || []), impact:'medium' });
+                  data.fingerprint.push({ api:'XRLightEstimate.primaryLightDirection', status:'ok', value: Array.from(le.primaryLightDirection || []), impact:'medium' });
+                  data.fingerprint.push({ api:'XRLightEstimate.sphericalHarmonicsCoefficients', status:'ok', value: Array.from(le.sphericalHarmonicsCoefficients || []), impact:'medium' });
+                } else {
+                  data.fingerprint.push({ api:'XRLightEstimate', status:'missing', value:null, impact:'medium' });
+                }
+              }
+            } else {
+              data.fingerprint.push({ api:'XRLightEstimate', status:'missing', value:null, impact:'medium' });
+            }
+
+            // Plane detection
+            try {
+              const planes = frame.worldInformation?.detectedPlanes;
+              if (planes) {
+                const p = planes.values().next().value;
+                data.fingerprint.push({ api:'XRPlane.lastChangedTime', status:'ok', value:p.lastChangedTime, impact:'low' });
+                data.fingerprint.push({ api:'XRPlane.polygon.length', status:'ok', value: Array.isArray(p.polygon) ? p.polygon.length : null, impact:'low' });
+                data.fingerprint.push({ api:'XRPlane.planeSpace', status:'ok', value: p.planeSpace.constructor.name, impact:'low' });
+              } else {
+                data.fingerprint.push({ api:'XRPlane', status:'missing', value:null, impact:'medium' });
+              }
+            } catch(e) {
+              data.fingerprint.push({ api:'XRPlane', status:'error', value:String(e), impact:'medium' });
+            }
+
+            // Joint space / Hand
+            try {
+              const inputSources = session.inputSources || [];
+              const handSource = inputSources.find(s => s.hand);
+              if (handSource && handSource.hand) {
+                data.fingerprint.push({ api:'XRHand.size', status:'ok', value: handSource.hand.size, impact:'low' });
+                const j = handSource.hand.values().next().value;
+                if (j) {
+                  data.fingerprint.push({ api:'XRJointSpace.jointName', status:'ok', value: j.jointName, impact:'low' });
+                }
+              } else {
+                data.fingerprint.push({ api:'XRHand', status:'none', value:null, impact:'low' });
+              }
+            } catch(e) {
+              data.fingerprint.push({ api:'XRHand', status:'error', value:String(e), impact:'low' });
+            }
+
+            // XRRay / XRRigidTransform constructor only
+            if ('XRRay' in window) {
+              const r = new XRRay();
+              data.fingerprint.push({ api:'XRRay.origin', status:'ok', value:[r.origin.x, r.origin.y, r.origin.z, r.origin.w], impact:'low' });
+              data.fingerprint.push({ api:'XRRay.direction', status:'ok', value:[r.direction.x, r.direction.y, r.direction.z, r.direction.w], impact:'low' });
+            } else {
+              data.fingerprint.push({ api:'XRRay', status:'missing', value:null, impact:'low' });
+            }
+            if ('XRRigidTransform' in window) {
+              const t = new XRRigidTransform();
+              data.fingerprint.push({ api:'XRRigidTransform.position', status:'ok', value:[t.position.x, t.position.y, t.position.z, t.position.w], impact:'low' });
+              data.fingerprint.push({ api:'XRRigidTransform.orientation', status:'ok', value:[t.orientation.x, t.orientation.y, t.orientation.z, t.orientation.w], impact:'low' });
+              data.fingerprint.push({ api:'XRRigidTransform.inverse', status:t.inverse ? 'ok' : 'missing', value:null, impact:'low' });
+            } else {
+              data.fingerprint.push({ api:'XRRigidTransform', status:'missing', value:null, impact:'low' });
+            }
+
+            // End the session
+            await session.end();
+            setStatus('Finished','ok');
+            finalize(data);
+          } catch(e) {
+            data.fingerprint.push({ api:'frame', status:'error', value:String(e), impact:'high' });
+            await session.end();
+            setStatus('Finished (error)','err');
+            finalize(data);
+          }
+        });
+      }
+
+    }
+
+    function finalize(data) {
+      // render table
+      const rows = data.fingerprint.map(item => {
+        return `<tr>
+          <td>${item.api}</td>
+          <td class="${item.status==='ok'?'ok':item.status==='error'?'err':'warn'}">${item.status}</td>
+          <td>${item.value!=null ? JSON.stringify(item.value) : ''}</td>
+          <td>${item.impact}</td>
+        </tr>`;
+      }).join('');
+      resultsEl.innerHTML = `<h3>Fingerprint Signals</h3>
+        <table>
+          <tr><th>API</th><th>Status</th><th>Value / Error</th><th>Impact</th></tr>
+          ${rows}
+        </table>`;
+      rawEl.textContent = JSON.stringify(data, null, 2);
+    }
+
+    document.getElementById('run').onclick = runPoC;
+    document.getElementById('copy').onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(rawEl.textContent);
+        setStatus('Copied JSON','ok');
+      } catch {
+        setStatus('Copy failed','warn');
+      }
+    };
+  })();
 </script>
