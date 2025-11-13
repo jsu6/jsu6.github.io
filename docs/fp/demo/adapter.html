@@ -2,89 +2,58 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Simple WebGPU Adapter Dump</title>
+  <title>Minimal WebGPU Dump</title>
 </head>
 <body>
 <pre id="out">Running…</pre>
 
 <script type="module">
 async function main() {
-  const out = document.getElementById('out');
-  out.textContent = '';
+  const out = document.getElementById("out");
+  out.textContent = "";
 
-  function log(...args) {
-    console.log(...args);
-    out.textContent += args.join(' ') + '\n';
-  }
-
-  if (!('gpu' in navigator)) {
-    log('WebGPU not supported (navigator.gpu is undefined).');
-    return;
+  function print(...msg) {
+    out.textContent += msg.join(" ") + "\n";
+    console.log(...msg);
   }
 
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) {
-    throw Error("Couldn't request WebGPU adapter.");
+    print("Couldn't request WebGPU adapter.");
+    return;
   }
 
-  // =========================================================
-  // adapter.info  (your style)
-  // =========================================================
-  let adapterInfo = adapter.info;
-
-  // If adapter.info is not present, try requestAdapterInfo()
-  if (!adapterInfo && typeof adapter.requestAdapterInfo === 'function') {
-    try {
-      adapterInfo = await adapter.requestAdapterInfo([
-        "vendor",
-        "architecture",
-        "device",
-        "description"
-      ]);
-    } catch (e) {
-      log('requestAdapterInfo() failed:', e);
-    }
-  }
-
-  if (adapterInfo) {
-    log('=== adapter.info ===');
-    for (const [key, value] of Object.entries(adapterInfo)) {
-      log(`info.${key}:`, value);
+  // ============================
+  // INFO
+  // ============================
+  print("=== adapter.info ===");
+  let info = adapter.info;
+  if (info) {
+    for (const [k, v] of Object.entries(info)) {
+      print(k + ":", v);
     }
   } else {
-    log('adapter.info is not available');
+    print("adapter.info is not available");
   }
 
-  // =========================================================
-  // adapter.features
-  // =========================================================
-  log('\n=== adapter.features ===');
-  try {
-    for (const feature of adapter.features) {
-      log('feature:', feature);
-    }
-  } catch (e) {
-    log('Error reading adapter.features:', e);
+  // ============================
+  // FEATURES
+  // ============================
+  print("\n=== adapter.features ===");
+  for (const feature of adapter.features) {
+    print(feature);
   }
 
-  // =========================================================
-  // adapter.limits
-  // =========================================================
-  log('\n=== adapter.limits ===');
-  try {
-    for (const key of Object.keys(adapter.limits)) {
-      log(`limit.${key}:`, adapter.limits[key]);
-    }
-  } catch (e) {
-    log('Error reading adapter.limits:', e);
+  // ============================
+  // LIMITS
+  // ============================
+  print("\n=== adapter.limits ===");
+  for (const key of Object.keys(adapter.limits)) {
+    print(key + ":", adapter.limits[key]);
   }
 }
 
-main().catch(err => {
-  console.error(err);
-  const out = document.getElementById('out');
-  out.textContent += '\nERROR: ' + err;
-});
+main();
 </script>
 </body>
 </html>
