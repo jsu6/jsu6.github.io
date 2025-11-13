@@ -1,118 +1,156 @@
 <!doctype html>
 <meta charset="utf-8" />
-<title>WebXR PoC (Chromium-safe, one frame)</title>
+<title>WebXR Fingerprinting Proof of Concept</title>
 <style>
-  body { font-family: system-ui; padding: 1rem; max-width: 900px; margin:auto; }
-  button { padding: .4rem .8rem; margin-right: .4rem; }
-  pre { background:#f6f7f9; border:1px solid #ccc; padding:.8rem; overflow:auto; }
+  body { font-family: system-ui, -apple-system, sans-serif; padding: 1rem; max-width: 1000px; margin: auto; }
+  button { padding: .5rem .9rem; margin-right: .4rem; }
+  table { border-collapse: collapse; margin-top: 1rem; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: .4rem .6rem; text-align: left; }
+  th { background: #f3f3f3; }
+  .ok { color: #008000; }
+  .err { color: #b00020; }
+  .warn { color: #a15a00; }
+  #status { margin-left: .5rem; }
+  pre { background: #fafafa; padding: .8rem; border: 1px solid #eee; overflow: auto; }
 </style>
 
-<h2>WebXR Proof of Concept (safe single-frame)</h2>
-<p>This demo requests an inline XR session, probes key APIs, and exits cleanly.
-Works even without XR hardware.</p>
+<h1>WebXR Fingerprinting Proof of Concept</h1>
+<p>
+  This demo probes WebXR interfaces and shows how their presence, numeric values, or errors
+  can serve as potential fingerprinting signals, even without real XR hardware.
+</p>
 <button id="run">Run</button>
 <button id="copy">Copy JSON</button>
 <span id="status"></span>
-<pre id="out">Ready.</pre>
+<div id="results"></div>
+<pre id="raw"></pre>
 
 <script>
 (async () => {
-  const out = document.getElementById("out");
   const status = document.getElementById("status");
-  const setStatus = (t,c="") => { status.textContent=t; status.className=c; };
-  const log = (o) => { out.textContent = JSON.stringify(o,null,2); };
+  const resultsEl = document.getElementById("results");
+  const raw = document.getElementById("raw");
+  const setStatus = (t, cls="") => { status.textContent = t; status.className = cls; };
 
   function safe(fn) {
     try {
       const v = fn();
-      if (v && typeof v.then==="function")
-        return v.then(val=>({ok:true,value:val})).catch(e=>({ok:false,error:String(e)}));
+      if (v && typeof v.then === "function") return v.then(val => ({ok:true,value:val}))
+        .catch(e => ({ok:false,error:String(e),name:e?.name}));
       return {ok:true,value:v};
-    } catch(e) { return {ok:false,error:String(e)}; }
+    } catch(e){ return {ok:false,error:String(e),name:e?.name}; }
   }
 
-  function exists(name) { return (name in globalThis); }
-
   async function run() {
-    setStatus("Running...");
-    const res = { env:{ua:navigator.userAgent}, support:{}, values:{}, errors:{} };
+    setStatus("Running…","warn");
+    const res = { env:{ ua:navigator.userAgent, platform:navigator.platform }, fp:[], raw:{} };
 
-    if(!navigator.xr) {
-      res.errors.noXR = "navigator.xr not found";
-      log(res); setStatus("Done (no XR).","ok"); return;
+    if(!navigator.xr){
+      res.fp.push({api:"navigator.xr",status:"missing",value:"",impact:"high"});
+      finalize(res); return;
     }
 
-    const inline = await navigator.xr.isSessionSupported("inline").catch(()=>false);
-    if(!inline){ res.errors.noInline="inline not supported"; log(res); setStatus("Done.","ok"); return; }
+    const inlineSupported = await navigator.xr.isSessionSupported("inline").catch(()=>false);
+    res.fp.push({api:"isSessionSupported(inline)",status:inlineSupported?"ok":"fail",impact:"high"});
 
-    const sess = await navigator.xr.requestSession("inline",{optionalFeatures:[
+    if(!inlineSupported){ finalize(res); return; }
+
+    const sessionReq = await safe(()=>navigator.xr.requestSession("inline",{optionalFeatures:[
       "anchors","hit-test","hand-tracking","light-estimation","plane-detection","depth-sensing","image-tracking"
-    ]}).catch(e=>({error:String(e)}));
-    if(!sess || sess.error){ res.errors.session=String(sess.error||"fail"); log(res); setStatus("Done.","ok"); return; }
+    ]}));
+    if(!sessionReq.ok){ res.fp.push({api:"requestSession",status:"error",value:sessionReq.error,impact:"high"}); finalize(res); return; }
+    const session=sessionReq.value;
 
-    let refSpace=null;
-    try{ refSpace=await sess.requestReferenceSpace("viewer"); }catch{}
+    const refSpaceReq = await safe(()=>session.requestReferenceSpace("viewer"));
+    const refSpace = refSpaceReq.ok?refSpaceReq.value:null;
 
-    // WebGL setup
     const canvas=document.createElement("canvas");
     const gl=canvas.getContext("webgl",{xrCompatible:true});
     await gl?.makeXRCompatible?.();
-    const layer=new XRWebGLLayer(sess,gl);
-    sess.updateRenderState({baseLayer:layer});
+    const layer=new XRWebGLLayer(session,gl);
+    session.updateRenderState({baseLayer:layer});
 
-    // Constructor-only probes (no session)
-    res.values.XRRay = exists("XRRay") ? (()=>{const r=new XRRay();return{
-      origin:r.origin, direction:r.direction, matrix:Array.from(r.matrix)}})() : null;
-    res.values.XRRigidTransform = exists("XRRigidTransform") ? (()=>{const t=new XRRigidTransform();
-      return{pos:t.position,orient:t.orientation,inv:!!t.inverse}})() : null;
+    // Quick constructor fingerprints
+    if("XRRay" in window){
+      const r=new XRRay();
+      res.fp.push({api:"XRRay.matrix.length",status:"ok",value:r.matrix.length,impact:"low"});
+    } else res.fp.push({api:"XRRay",status:"missing",impact:"low"});
 
-    // One frame only
-    const frameHandle = sess.requestAnimationFrame(async (t,frame)=>{
+    if("XRRigidTransform" in window){
+      const t=new XRRigidTransform();
+      res.fp.push({api:"XRRigidTransform.inverse",status:t.inverse?"ok":"missing",impact:"medium"});
+    }
+
+    // one frame only
+    session.requestAnimationFrame(async (time,frame)=>{
       try{
-        const pose = frame.getViewerPose(refSpace);
-        res.support.viewerPose = !!pose;
-        if(pose?.views?.length){
-          const view = pose.views[0];
-          const vp = layer.getViewport(view);
-          res.values.viewport = vp ? {x:vp.x,y:vp.y,w:vp.width,h:vp.height}:null;
-          res.values.eye = view.eye;
-        }
+        const pose=frame.getViewerPose(refSpace);
+        if(pose){
+          res.fp.push({api:"XRView.eye",status:"ok",value:pose.views[0]?.eye,impact:"medium"});
+          const vp=layer.getViewport(pose.views[0]);
+          res.fp.push({api:"XRWebGLLayer.getViewport",status:"ok",value:`${vp.width}x${vp.height}`,impact:"high"});
+        } else res.fp.push({api:"getViewerPose",status:"fail",impact:"high"});
 
-        // Depth Info
+        // Depth
         try{
-          const depth = frame.getDepthInformation?.(pose?.views?.[0]);
-          if(depth){
-            res.values.depth = {
-              w:depth.width,h:depth.height,
-              raw1: depth.rawValueToMeters?.(1)??null
-            };
-          }
-        }catch(e){ res.errors.depth=String(e); }
+          const d=frame.getDepthInformation?.(pose?.views?.[0]);
+          if(d) res.fp.push({api:"XRDepthInformation",status:"ok",
+              value:`${d.width}×${d.height}`,impact:"high"});
+          else res.fp.push({api:"XRDepthInformation",status:"missing",impact:"high"});
+        }catch(e){ res.fp.push({api:"XRDepthInformation",status:"error",value:String(e),impact:"high"}); }
 
-        // Anchor test
+        // Anchor
         if(frame.createAnchor && refSpace){
-          const a = await safe(()=>frame.createAnchor(new XRRigidTransform(),refSpace));
-          res.support.anchor = a.ok;
-          if(a.ok) await safe(()=>a.value.delete());
+          const a=await safe(()=>frame.createAnchor(new XRRigidTransform(),refSpace));
+          res.fp.push({api:"XRFrame.createAnchor",status:a.ok?"ok":"fail",impact:"medium"});
         }
 
-        await sess.end().catch(()=>{});
-        cancelAnimationFrame(frameHandle);
-        setStatus("Finished.","ok");
-        log(res);
+        // Hand/joints
+        try{
+          const src=session.inputSources.find(s=>s.hand);
+          res.fp.push({api:"XRHand",status:src?"ok":"none",impact:"medium"});
+          if(src?.hand) res.fp.push({api:"XRHand.size",status:"ok",value:src.hand.size,impact:"low"});
+        }catch(e){res.fp.push({api:"XRHand",status:"error",value:String(e),impact:"medium"});}
+
+        // Plane detection
+        try{
+          const planes=frame.worldInformation?.detectedPlanes;
+          res.fp.push({api:"XRPlane",status:planes?"ok":"none",impact:"medium"});
+          const p=planes?.values().next().value;
+          if(p) res.fp.push({api:"XRPlane.polygon.length",status:"ok",value:p.polygon?.length,impact:"low"});
+        }catch(e){res.fp.push({api:"XRPlane",status:"error",value:String(e),impact:"medium"});}
+
+        await session.end();
+        finalize(res);
       }catch(e){
-        res.errors.frame=String(e);
-        await sess.end().catch(()=>{});
-        cancelAnimationFrame(frameHandle);
-        setStatus("Finished (error).","warn");
-        log(res);
+        res.fp.push({api:"frame",status:"error",value:String(e),impact:"high"});
+        await session.end();
+        finalize(res);
       }
     });
   }
 
+  function finalize(res){
+    setStatus("Finished.","ok");
+    const rows = res.fp.map(r=>`
+      <tr>
+        <td>${r.api}</td>
+        <td class="${r.status==='ok'?'ok':r.status==='error'?'err':'warn'}">${r.status}</td>
+        <td>${r.value??''}</td>
+        <td>${r.impact}</td>
+      </tr>`).join("");
+    resultsEl.innerHTML = `
+      <h3>Fingerprinting Signals</h3>
+      <table>
+        <tr><th>API</th><th>Status</th><th>Value / Error</th><th>Entropy Impact</th></tr>
+        ${rows}
+      </table>`;
+    raw.textContent = JSON.stringify(res, null, 2);
+  }
+
   document.getElementById("run").onclick = run;
   document.getElementById("copy").onclick = async ()=>{
-    try{ await navigator.clipboard.writeText(out.textContent);
+    try{ await navigator.clipboard.writeText(raw.textContent);
       setStatus("Copied JSON","ok"); }catch{ setStatus("Copy failed","warn"); }
   };
 })();
