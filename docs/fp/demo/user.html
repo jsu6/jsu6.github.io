@@ -1,18 +1,116 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Clipboard & Input Interaction</title>
-  <link rel="stylesheet" href="../styles.css">
-  <style>body{padding:1em;} pre{background:#f6f8fa;padding:1em;border:1px solid #ddd;border-radius:6px;}</style>
-</head>
-<body>
-<h1>Clipboard & Input Fingerprinting</h1>
-<p>Shows gesture and clipboard access behavior (user interaction required).</p>
-<div id="status" class="loading">Ready</div>
-<button id="refresh" data-collector="collect_input_and_clipboard_demo">Run Collector</button>
-<button id="copy">Copy JSON</button>
-<div id="output"></div>
-<script src="../fp.js"></script>
+<meta charset="utf-8">
+<title>Fingerprint-Relevant Event Demo (Educational)</title>
+<body style="font-family:system-ui;padding:1rem;white-space:pre-wrap">
+<h2>Fingerprint-Relevant Event Demo</h2>
+<p>This educational demo listens for event attributes that can vary across browsers, hardware, or OS.
+No data leaves your device.</p>
+<pre id="out">Waiting for interaction…</pre>
+
+<script>
+const log = (...a) => out.textContent += a.join(' ') + '\n';
+
+/* 1. GPUUncapturedErrorEvent */
+if ('gpu' in navigator && navigator.gpu) {
+  const adapterPromise = navigator.gpu.requestAdapter?.();
+  adapterPromise?.then(a => a.requestDevice?.().then(device => {
+    device.addEventListener('uncapturederror', e => {
+      log('[GPUUncapturedErrorEvent]');
+      log('error:', e.error?.message || String(e.error));
+      log('');
+    });
+    // trigger a harmless GPU error
+    device.destroy(); 
+  })).catch(()=>{});
+} else {
+  log('WebGPU not supported');
+}
+
+/* 2. GamepadEvent */
+window.addEventListener('gamepadconnected', e => {
+  const gp = e.gamepad;
+  log('[GamepadEvent]');
+  log(`id=${gp.id}, axes=${gp.axes.length}, buttons=${gp.buttons.length}`);
+  log('');
+});
+
+/* 3. HIDInputReportEvent (requires permission) */
+if ('hid' in navigator) {
+  navigator.hid.requestDevice({filters: []}).then(devs => {
+    devs.forEach(d => {
+      d.addEventListener('inputreport', e => {
+        log('[HIDInputReportEvent]');
+        log(`device=${d.productName}, reportId=${e.reportId}, dataLen=${e.data.byteLength}`);
+        log('');
+      });
+    });
+  }).catch(e => log('HID denied:', e));
+}
+
+/* 4. MIDIConnectionEvent */
+if ('requestMIDIAccess' in navigator) {
+  navigator.requestMIDIAccess().then(midi => {
+    midi.addEventListener('statechange', e => {
+      log('[MIDIConnectionEvent]');
+      log(`port=${e.port.name}, type=${e.port.type}, state=${e.port.state}`);
+      log('');
+    });
+  });
+}
+
+/* 5. MediaQueryListEvent */
+const mq = matchMedia('(prefers-color-scheme: dark)');
+mq.addEventListener('change', e => {
+  log('[MediaQueryListEvent]');
+  log(`media=${e.media}, matches=${e.matches}`);
+  log('');
+});
+
+/* 6. SpeechSynthesisEvent */
+if ('speechSynthesis' in window) {
+  const utter = new SpeechSynthesisUtterance('test');
+  utter.onstart = e => {
+    log('[SpeechSynthesisEvent]');
+    log(`name=${e.utterance.voice?.name || 'unknown'}`);
+    log('');
+  };
+  speechSynthesis.speak(utter);
+}
+
+/* 7. StorageEvent */
+window.addEventListener('storage', e => {
+  log('[StorageEvent]');
+  log(`key=${e.key}, newValue=${e.newValue}, url=${e.url}`);
+  log('');
+});
+
+/* 8. TouchEvent */
+window.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  log('[TouchEvent]');
+  log(`touches=${e.touches.length}, radiusX=${t?.radiusX}, force=${t?.force}`);
+  log('');
+});
+
+/* 9. TransitionEvent */
+document.body.style.transition = 'background 0.2s ease';
+document.body.addEventListener('transitionend', e => {
+  log('[TransitionEvent]');
+  log(`property=${e.propertyName}, elapsedTime=${e.elapsedTime}`);
+  log('');
+});
+setTimeout(() => document.body.style.background = '#eef', 500);
+
+/* 10. WebGLContextEvent */
+const canvas = document.createElement('canvas');
+const gl = canvas.getContext('webgl');
+canvas.addEventListener('webglcontextlost', e => {
+  log('[WebGLContextEvent]');
+  log(`statusMessage=${e.statusMessage || '(none)'}`);
+  log('');
+});
+gl.getExtension('INVALID_EXTENSION'); // intentionally invalid to trigger potential message
+</script>
 </body>
 </html>
