@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>WebGPU Adapter Info Test</title>
+  <title>WebGPU Full Adapter Info</title>
 </head>
 <body>
-  <h1>WebGPU Adapter Info</h1>
+  <h1>WebGPU Adapter Info / Features / Limits</h1>
   <pre id="output">Checking WebGPU...</pre>
 
   <script>
@@ -18,9 +18,8 @@
       }
 
       try {
-        // Request the adapter
         const adapter = await navigator.gpu.requestAdapter({
-          powerPreference: "high-performance"
+          powerPreference: "high-performance",
         });
 
         if (!adapter) {
@@ -28,18 +27,34 @@
           return;
         }
 
-        // Build a readable object
-        const info = {
-          vendor: adapter.info.vendor ?? "(hidden)",
-          architecture: adapter.info.architecture ?? "(hidden)",
-          device: adapter.info.device ?? "(hidden)",
-          description: adapter.info.description ?? "(hidden)",
+        // ---- 1. INFO ----
+        const infoObj = {};
+        for (const key in adapter.info) {
+          infoObj[key] = adapter.info[key] || "(hidden or empty)";
+        }
+
+        // ---- 2. FEATURES ----
+        const featuresArr = Array.from(adapter.features);
+
+        // ---- 3. LIMITS ----
+        const limitsObj = {};
+        for (const [key, value] of Object.entries(adapter.limits)) {
+          limitsObj[key] = value;
+        }
+
+        // Combine all output
+        const finalOutput = {
+          info: infoObj,
+          features: featuresArr,
+          limits: limitsObj,
         };
 
-        out.textContent = "GPU Adapter Info:\n" + JSON.stringify(info, null, 2);
+        out.textContent = JSON.stringify(finalOutput, null, 2);
 
-        console.log("Full adapter:", adapter);
-        console.log("Adapter info:", adapter.info);
+        // Also log in console
+        console.log("GPUAdapter Info:", adapter.info);
+        console.log("GPUAdapter Features:", featuresArr);
+        console.log("GPUAdapter Limits:", limitsObj);
 
       } catch (err) {
         out.textContent = "Error: " + err;
@@ -49,6 +64,5 @@
 
     document.addEventListener("DOMContentLoaded", init);
   </script>
-
 </body>
 </html>
