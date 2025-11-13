@@ -1,336 +1,113 @@
 <!doctype html>
-<meta charset="utf-8" />
-<title>Animation API Fingerprinting PoC</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="utf-8">
+<title>Animation API Fingerprinting — Stability Test</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
-  body { padding: 18px; }
-  h1 { font-size: 20px; margin: 0 0 10px; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
-  button { padding:8px 12px; border:1px solid #ccc; border-radius:8px; background:#fafafa; cursor:pointer; }
-  pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  table { border-collapse: collapse; margin-top: 12px; width: 100%; max-width: 1000px; }
-  th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
-  th { background: #f6f6f6; text-align: left; }
-  .ok { color: #0a7; font-weight: 600; }
-  .warn { color: #c70; font-weight: 600; }
-  .bad { color: #c00; font-weight: 600; }
-  .muted { color: #666; }
-  .small { font-size: 12px; }
-  .pill { font-size: 11px; padding: 2px 6px; border:1px solid #ddd; border-radius:999px; background:#f9f9f9; }
-  #preview { width: 120px; height: 20px; background: #eee; margin-top: 8px; position: relative; overflow:hidden; }
-  #box { position:absolute; top:0; left:0; width: 20px; height: 20px; background: #69f; }
+  :root { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; }
+  body { padding:18px; max-width:1100px; }
+  h1 { font-size:20px; margin-bottom:8px; }
+  button { padding:8px 14px; margin:4px; border:1px solid #ccc; border-radius:6px; background:#fafafa; cursor:pointer; }
+  table { border-collapse:collapse; width:100%; margin-top:10px; }
+  th,td { border:1px solid #ddd; padding:5px 8px; font-size:13px; vertical-align:top; }
+  th { background:#f5f5f5; text-align:left; }
+  pre { background:#f9f9f9; border:1px solid #ddd; padding:8px; overflow:auto; max-height:240px; }
+  .ok { color:#080; font-weight:600; }
+  .warn { color:#c70; font-weight:600; }
+  .bad { color:#c00; font-weight:600; }
+  #box { width:20px; height:20px; background:#69f; position:absolute; }
+  #preview { width:120px; height:20px; background:#eee; overflow:hidden; position:relative; margin-top:8px; }
 </style>
 
-<h1>Animation API Fingerprinting PoC</h1>
-<p class="small muted">
-  This demo samples Web Animations timing to produce a fingerprint from refresh rate, jitter, quantization,
-  state transitions, and (optionally) compositor behavior via AnimationWorklet.
+<h1>Animation API Fingerprinting — Stability Test</h1>
+<p style="font-size:13px;color:#666">
+This runs the Animation-API fingerprint three times and compares hashes to estimate stability across runs.
+A stable fingerprint implies consistent timing quantization &amp; scheduler characteristics on this browser/device.
 </p>
 
-<div class="row" style="margin: 8px 0 14px">
-  <button id="runBtn">Run (≈4–6 seconds)</button>
-  <button id="busyBtn" title="Blocks main thread for ~200ms to stress test timing (optional)">Inject Main-Thread Jank</button>
-  <span id="status" class="pill">idle</span>
+<div>
+  <button id="runBtn">Run Stability Test (3 rounds)</button>
+  <button id="busyBtn">Inject 200 ms Main-Thread Jank</button>
+  <span id="status" style="font-size:12px;margin-left:10px;">idle</span>
 </div>
+<div id="preview"><div id="box"></div></div>
 
-<div id="preview" title="Simple animation used for sampling">
-  <div id="box"></div>
-</div>
+<table id="summary"><thead>
+<tr><th>Round</th><th>Hash</th><th>Mean Δ (ms)</th><th>Std Δ (ms)</th><th>Refresh (Hz)</th></tr>
+</thead><tbody></tbody></table>
 
-<table id="results">
-  <thead>
-    <tr><th>Metric</th><th>Value</th><th>Notes</th></tr>
-  </thead>
-  <tbody></tbody>
-</table>
+<h3>Stability Score</h3>
+<pre id="score"></pre>
 
-<h3>Raw Samples</h3>
-<pre id="raw" class="small muted" style="max-height:240px;overflow:auto"></pre>
-
-<h3>Fingerprint</h3>
-<pre id="fp"></pre>
+<h3>Detail (JSON of Last Run)</h3>
+<pre id="detail"></pre>
 
 <script>
-(async () => {
-  const $ = (sel) => document.querySelector(sel);
-  const outTBody = $("#results tbody");
-  const raw = $("#raw");
-  const fpEl = $("#fp");
-  const status = $("#status");
-  const runBtn = $("#runBtn");
-  const busyBtn = $("#busyBtn");
-  const box = $("#box");
+(async()=>{
+const $=s=>document.querySelector(s);
+const runBtn=$("#runBtn"),busyBtn=$("#busyBtn"),status=$("#status");
+const outTBody=$("#summary tbody"),detail=$("#detail"),scoreEl=$("#score"),box=$("#box");
 
-  // Utility: table row appender
-  function row(name, value, notes = "", cls = "") {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td><code>${name}</code></td><td class="${cls}">${escapeHtml(String(value))}</td><td class="small muted">${escapeHtml(notes)}</td>`;
-    outTBody.appendChild(tr);
+busyBtn.onclick=()=>{const e=performance.now()+200;while(performance.now()<e){}};
+
+runBtn.onclick=async()=>{
+  runBtn.disabled=true; outTBody.innerHTML=""; scoreEl.textContent=""; detail.textContent="";
+  status.textContent="running…";
+  const rounds=3, hashes=[], metrics=[];
+  for(let i=0;i<rounds;i++){
+    const res=await measureOnce();
+    hashes.push(res.hash); metrics.push(res);
+    addRow(i+1,res.hash,res.rAF.mean,res.rAF.std,res.rAF.hz);
+    await new Promise(r=>setTimeout(r,400));
   }
-  const escapeHtml = (s) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':"&quot;","'":"&#039;"}[c]));
+  const stable=stabilityScore(hashes);
+  const note= stable>90?"ok": stable>70?"warn":"bad";
+  scoreEl.innerHTML=`Hash distance score: ${stable.toFixed(1)} % <span class="${note}">(${note})</span>\n\nHashes:\n${hashes.join("\n")}`;
+  detail.textContent=JSON.stringify(metrics[metrics.length-1],null,2);
+  status.textContent="done"; runBtn.disabled=false;
+};
 
-  // Utility: quick hash (SHA-256 if available; fallback to simple DJB2)
-  async function fingerprintHash(obj) {
-    const data = new TextEncoder().encode(JSON.stringify(obj));
-    if (crypto && crypto.subtle && crypto.subtle.digest) {
-      const buf = await crypto.subtle.digest("SHA-256", data);
-      return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
-    }
-    // Fallback DJB2
-    let h = 5381;
-    for (let i = 0; i < data.length; i++) h = ((h << 5) + h) ^ data[i];
-    return ("djb2_" + (h >>> 0).toString(16));
+function addRow(i,h,mean,std,hz){
+  const tr=document.createElement("tr");
+  tr.innerHTML=`<td>${i}</td><td style="font-family:monospace">${h.slice(0,16)}…</td>
+  <td>${round(mean)}</td><td>${round(std)}</td><td>${hz}</td>`;
+  outTBody.appendChild(tr);
+}
+
+async function measureOnce(){
+  const anim=box.animate([{transform:'translateX(0px)'},{transform:'translateX(100px)'}],
+                         {duration:1000,iterations:Infinity,easing:'linear'});
+  const deltas=[],frames=200;let last;
+  await new Promise(r=>{
+    function tick(t){ if(last) deltas.push(t-last); last=t;
+      if(deltas.length<frames) requestAnimationFrame(tick); else r(); }
+    requestAnimationFrame(tick);
+  });
+  const s=stats(deltas);
+  const hz=Math.round(1000/s.mean);
+  const res={rAF:{mean:s.mean,std:s.std,hz}};
+  const hash=await hashObj(res);
+  anim.cancel(); return {...res,hash};
+}
+
+function stats(a){const c=a.filter(x=>isFinite(x));const n=c.length;
+  const mean=c.reduce((a,b)=>a+b,0)/n;
+  const v=c.reduce((a,b)=>a+(b-mean)**2,0)/n;
+  const std=Math.sqrt(v);return{mean,std,n};
+}
+async function hashObj(o){
+  const data=new TextEncoder().encode(JSON.stringify(o));
+  const b=await crypto.subtle.digest("SHA-256",data);
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+function stabilityScore(hs){
+  if(hs.length<2)return 100;
+  const base=hs[0].split("");let total=0,diff=0;
+  for(let i=1;i<hs.length;i++){
+    const cur=hs[i].split("");
+    for(let j=0;j<base.length;j++){total++;if(base[j]!==cur[j])diff++;}
   }
-
-  // Busy loop to simulate main-thread jank
-  function busy(ms = 200) {
-    const end = performance.now() + ms;
-    while (performance.now() < end) { /* spin */ }
-  }
-
-  // Core test runner
-  async function run() {
-    runBtn.disabled = true;
-    outTBody.innerHTML = "";
-    raw.textContent = "";
-    fpEl.textContent = "";
-    status.textContent = "running…";
-
-    // 1) Create a simple animation to sample
-    const durationMs = 1000; // 1s loop to keep progress bounded
-    const anim = box.animate([
-      { transform: 'translateX(0px)' },
-      { transform: 'translateX(100px)' }
-    ], { duration: durationMs, iterations: Infinity, easing: 'linear' });
-
-    // Ensure we can read key properties
-    const have = {
-      Animation_cancel: !!anim.cancel,
-      Animation_commitStyles: !!anim.commitStyles,
-      Animation_currentTime: "currentTime" in anim,
-      Animation_effect: !!anim.effect,
-      Animation_finish: !!anim.finish,
-      Animation_id: "id" in anim,
-      Animation_pause: !!anim.pause,
-      Animation_play: !!anim.play,
-      Animation_playState: "playState" in anim,
-      Animation_progress: "progress" in anim || false, // not standard everywhere
-      Animation_reverse: !!anim.reverse,
-      Animation_startTime: "startTime" in anim,
-      Animation_updatePlaybackRate: !!anim.updatePlaybackRate,
-      AnimationEffect_getComputedTiming: !!anim.effect?.getComputedTiming,
-      AnimationEffect_getTiming: !!anim.effect?.getTiming,
-      AnimationEffect_updateTiming: !!anim.effect?.updateTiming,
-      AnimationTimeline_getCurrentTime: !!document.timeline?.getCurrentTime,
-      AnimationWorklet_registerAnimator: "animationWorklet" in CSS && !!CSS.animationWorklet?.addModule
-    };
-
-    // 2) Sample timing via rAF and Animation properties
-    const samples = [];
-    const deltas = [];
-    const animTimeDeltas = [];
-    const timelineDeltas = [];
-
-    const framesToSample = 240; // ~4s at 60 Hz
-    let last = 0, lastAnim = null, lastTL = null;
-
-    await new Promise((resolve) => {
-      function tick(t) {
-        const tl = document.timeline.getCurrentTime ? document.timeline.getCurrentTime() : null;
-        const ct = anim.currentTime;
-
-        if (samples.length > 0) {
-          deltas.push(t - last);
-          if (lastAnim != null && ct != null) animTimeDeltas.push(ct - lastAnim);
-          if (lastTL  != null && tl != null) timelineDeltas.push(tl - lastTL);
-        }
-        samples.push({ t, tl, ct, ps: anim.playState, prog: tryGetProgress(anim) });
-        last = t; lastAnim = ct; lastTL = tl;
-
-        if (samples.length < framesToSample) requestAnimationFrame(tick);
-        else resolve();
-      }
-      requestAnimationFrame(tick);
-    });
-
-    // 3) State transitions + playback tests
-    const beforeState = anim.playState;
-    anim.pause();
-    const pausedState = anim.playState;
-    anim.play();
-    const resumedState = anim.playState;
-
-    // Playback rate & reverse behavior
-    anim.updatePlaybackRate(anim.playbackRate * 1.5);
-    const rateAfter = anim.playbackRate;
-    anim.reverse();
-    const reversed = true;
-
-    // 4) Commit styles at an arbitrary point and query effect timing
-    anim.commitStyles?.();
-    const comp1 = anim.effect?.getComputedTiming?.();
-    const timing1 = anim.effect?.getTiming?.();
-    // Adjust timing slightly and observe quantization/rounding
-    anim.effect?.updateTiming?.({ delay: (timing1?.delay || 0) + 0.5 });
-    const comp2 = anim.effect?.getComputedTiming?.();
-
-    // 5) Optional compositor test: try AnimationWorklet if supported
-    let worklet = { supported: have.AnimationWorklet_registerAnimator, advancedWhileBusy: null, notes: "" };
-    if (have.AnimationWorklet_registerAnimator) {
-      try {
-        // Inline module as a Blob to avoid CORS
-        const workletCode = `
-          registerAnimator('tick', class {
-            constructor(options) { this.last = 0; }
-            animate(currentTime, effect) {
-              // simple ping-pong
-              const d = (currentTime % 1000) / 1000;
-              effect.localTime = currentTime;
-              return;
-            }
-          });
-        `;
-        const blobUrl = URL.createObjectURL(new Blob([workletCode], { type: "text/javascript" }));
-        await CSS.animationWorklet.addModule(blobUrl);
-
-        const keyframes = new KeyframeEffect(
-          box,
-          [{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }],
-          { duration: 1000, iterations: 1e6, easing: 'linear' }
-        );
-        const wa = new WorkletAnimation('tick', keyframes, document.timeline);
-        wa.play();
-
-        // Measure whether animation time advances during a main-thread block
-        const tBefore = document.timeline.getCurrentTime();
-        busy(200); // block main thread ~200ms
-        const tAfter = document.timeline.getCurrentTime();
-        // If compositor continued, total timeline might still advance, but we check effect’s computed timing delta
-        const cta = keyframes.getComputedTiming().localTime ?? null;
-        // Without direct comms from worklet, we heuristically check if timeline advanced "smoothly"
-        worklet.advancedWhileBusy = (tAfter - tBefore) >= 150 ? true : false;
-        worklet.notes = "Heuristic: if timeline advances ≥150ms during main-thread block, compositor likely progressed.";
-        wa.cancel();
-        URL.revokeObjectURL(blobUrl);
-      } catch (e) {
-        worklet.supported = true;
-        worklet.notes = "Worklet present but module/init failed: " + String(e);
-      }
-    }
-
-    // 6) Compute statistics
-    const stats = (arr) => {
-      const clean = arr.filter(x => typeof x === 'number' && isFinite(x));
-      const n = clean.length;
-      if (!n) return { n:0, mean:null, std:null, min:null, max:null, q: null };
-      const mean = clean.reduce((a,b)=>a+b,0)/n;
-      const var_ = clean.reduce((a,b)=>a+(b-mean)*(b-mean),0)/n;
-      const std = Math.sqrt(var_);
-      const sorted = clean.slice().sort((a,b)=>a-b);
-      const q = (p) => sorted[Math.max(0, Math.min(sorted.length-1, Math.floor(p*(sorted.length-1))))];
-      return { n, mean, std, min: sorted[0], max: sorted[sorted.length-1], q: {p01:q(0.01), p5:q(0.05), p50:q(0.5), p95:q(0.95), p99:q(0.99)} };
-    };
-
-    const sRaf = stats(deltas);
-    const sAnim = stats(animTimeDeltas);
-    const sTL = stats(timelineDeltas);
-
-    // Estimate refresh rate from rAF deltas (simple rounding to nearest common Hz)
-    const hz = sRaf.mean ? Math.round(1000 / sRaf.mean) : null;
-
-    // Quantization step: smallest positive increment seen in anim.currentTime/timeline
-    const minStepAnim = Math.min(...animTimeDeltas.filter(x => x > 0));
-    const minStepTL   = Math.min(...timelineDeltas.filter(x => x > 0));
-
-    // 7) Collect outputs into a normalized object for hashing
-    const result = {
-      support: have,
-      playStateTransitions: { before: beforeState, paused: pausedState, resumed: resumedState, reversed },
-      playbackRate: rateAfter,
-      rAF: {
-        frames: sRaf.n, mean_ms: round(sRaf.mean), std_ms: round(sRaf.std),
-        min_ms: round(sRaf.min), p50_ms: round(sRaf.q?.p50), p95_ms: round(sRaf.q?.p95), max_ms: round(sRaf.max),
-        est_refresh_hz: hz
-      },
-      animCurrentTime: {
-        frames: sAnim.n, mean_ms: round(sAnim.mean), std_ms: round(sAnim.std),
-        min_step_ms: isFinite(minStepAnim) ? round(minStepAnim) : null
-      },
-      timelineCurrentTime: {
-        frames: sTL.n, mean_ms: round(sTL.mean), std_ms: round(sTL.std),
-        min_step_ms: isFinite(minStepTL) ? round(minStepTL) : null
-      },
-      computedTiming: {
-        before: compactComputed(comp1),
-        afterSmallUpdate: compactComputed(comp2)
-      },
-      worklet: worklet
-    };
-
-    // 8) Render summary table
-    row("Animation.id", anim.id ?? "(none)", "Script-controlled; low entropy.");
-    row("Animation.playState (before→pause→play)", `${beforeState} → ${pausedState} → ${resumedState}`, "State transitions are deterministic, timings are not.");
-    row("Animation.playbackRate (after update)", result.playbackRate, "Playback rate changes affect observed deltas.");
-    row("rAF mean Δ (ms)", round(sRaf.mean), "Frame pacing reflects refresh rate and scheduler.");
-    row("rAF std Δ (ms)", round(sRaf.std), "Jitter varies by GPU/driver/OS.", (sRaf.std>1.0)?"warn":"");
-    row("Estimated refresh rate (Hz)", hz ?? "N/A", "Rounded from rAF mean delta.", hz? "ok":"");
-    row("Animation.currentTime min step (ms)", isFinite(minStepAnim)? round(minStepAnim) : "N/A", "Timing quantization / resolution.", "");
-    row("Timeline.getCurrentTime min step (ms)", isFinite(minStepTL)? round(minStepTL) : "N/A", "Timeline timebase resolution.", "");
-    row("Effect.getComputedTiming() (sample)", JSON.stringify(result.computedTiming.before), "Implementation rounding can differ.");
-    row("Effect.getComputedTiming() after tiny update", JSON.stringify(result.computedTiming.afterSmallUpdate), "Observe rounding/quantization response.");
-    row("AnimationWorklet available", have.AnimationWorklet_registerAnimator ? "yes" : "no", have.AnimationWorklet_registerAnimator ? "ok" : "muted");
-    if (have.AnimationWorklet_registerAnimator) {
-      row("Worklet advanced during 200ms jank?", String(worklet.advancedWhileBusy), worklet.notes, worklet.advancedWhileBusy ? "ok" : "warn");
-    }
-
-    // 9) Raw dump (first ~24 samples)
-    raw.textContent =
-      samples.slice(0, 24).map(s =>
-        `t=${round(s.t)}  tl=${round(s.tl)}  ct=${round(s.ct)}  ps=${s.ps}  prog=${fmtProg(s.prog)}`
-      ).join("\n") + (samples.length > 24 ? `\n… (${samples.length} frames total)` : "");
-
-    // 10) Hash
-    const fp = await fingerprintHash(stableForHash(result));
-    fpEl.textContent = JSON.stringify({ fingerprint: fp, summary: result }, null, 2);
-
-    // Cleanup
-    anim.cancel();
-    status.textContent = "done";
-    runBtn.disabled = false;
-  }
-
-  function tryGetProgress(anim) {
-    try {
-      // Non-standard in some engines; fall back to computedTiming.progress
-      if ("progress" in anim && typeof anim.progress === "number") return anim.progress;
-      const ct = anim.effect?.getComputedTiming?.();
-      return typeof ct?.progress === "number" ? ct.progress : null;
-    } catch { return null; }
-  }
-
-  function round(x) { return (typeof x === "number" && isFinite(x)) ? Math.round(x * 1000) / 1000 : x; }
-  function fmtProg(p) { return (p == null) ? "null" : round(p); }
-
-  function compactComputed(ct) {
-    if (!ct) return null;
-    const pick = ["activeDuration", "currentIteration", "endTime", "localTime", "progress"];
-    const o = {};
-    for (const k of pick) if (k in ct) o[k] = (typeof ct[k] === "number" ? round(ct[k]) : ct[k]);
-    return o;
-    // Other fields exist but vary across specs/engines; we keep a stable subset.
-  }
-
-  // Remove volatile fields before hashing, to stabilize across quick re-runs
-  function stableForHash(res) {
-    const clone = JSON.parse(JSON.stringify(res));
-    // Drop raw sample counts (keep aggregate stats), and notes
-    delete clone.worklet.notes;
-    return clone;
-  }
-
-  // Wire up buttons
-  runBtn.onclick = run;
-  busyBtn.onclick = () => busy(200);
+  return 100*(1-diff/total);
+}
+function round(x){return x?Math.round(x*1000)/1000:"";}
 })();
 </script>
