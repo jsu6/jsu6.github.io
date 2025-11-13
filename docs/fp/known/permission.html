@@ -1,137 +1,50 @@
 <!doctype html>
 <html>
-<head>
-<meta charset="utf-8"/>
-<title>DeviceOrientation PoC — Permission Timing & Detection</title>
-<style>
-  body{font-family:system-ui,-apple-system,Arial;padding:18px}
-  .v{font-family:monospace;font-size:1.1rem}
-  button{padding:6px 10px;margin-right:6px;margin-top:4px}
-  pre{background:#f8f9fa;padding:8px;border-radius:6px;white-space:pre-wrap}
-  .meta{margin-top:10px;color:#333}
-</style>
-</head>
-<body>
-<h2>DeviceOrientation PoC — Permission & Detection</h2>
-
-<div>
-  <button id="start">Start</button>
-  <button id="stop" disabled>Stop</button>
-  <button id="detect">Run Detection</button>
-</div>
-
-<p>alpha: <span id="alpha" class="v">—</span></p>
-<p>beta:  <span id="beta"  class="v">—</span></p>
-<p>gamma: <span id="gamma" class="v">—</span></p>
-
-<div class="meta">
-  <div>Permission status: <span id="permStatus">—</span></div>
-  <div>Response time: <span id="permTime">—</span> ms</div>
-</div>
-
-<h3>Environment Detection</h3>
-<pre id="out">Click “Run Detection”</pre>
+<meta charset="utf-8">
+<title>DeviceOrientation Minimal PoC</title>
+<body style="font-family:system-ui;padding:1rem">
+<h3>DeviceOrientation Minimal PoC</h3>
+<button id="btn">Request Permission & Start</button>
+<pre id="out">Waiting...</pre>
 
 <script>
-const startBtn=document.getElementById('start');
-const stopBtn=document.getElementById('stop');
-const detectBtn=document.getElementById('detect');
-const a=document.getElementById('alpha');
-const b=document.getElementById('beta');
-const g=document.getElementById('gamma');
-const permStatusEl=document.getElementById('permStatus');
-const permTimeEl=document.getElementById('permTime');
-const out=document.getElementById('out');
+const out = document.getElementById('out');
+const log = (...a) => out.textContent += a.join(' ') + '\n';
 
-let handler=null, permissionStart=0, firstEventStart=0, firstEventTimeout=null;
+document.getElementById('btn').onclick = async () => {
+  out.textContent = '';  // clear
+  log('UserAgent:', navigator.userAgent);
+  log('');
 
-function fmt(x){return x==null?'null':Number(x).toFixed(2);}
-
-async function start(){
-  if(typeof DeviceOrientationEvent==='undefined'){alert('DeviceOrientationEvent not supported.');return;}
-  permStatusEl.textContent='pending...';permTimeEl.textContent='—';
-
-  if(typeof DeviceOrientationEvent.requestPermission==='function'){
-    try{
-      permissionStart=performance.now();
-      const res=await DeviceOrientationEvent.requestPermission();
-      const delta=Math.round(performance.now()-permissionStart);
-      permTimeEl.textContent=String(delta);
-      permStatusEl.textContent=res==='granted'?'granted':'denied / '+String(res);
-      if(res==='granted')attachHandler();
-    }catch(e){
-      permTimeEl.textContent=String(Math.round(performance.now()-permissionStart));
-      permStatusEl.textContent='error: '+String(e);
+  try {
+    if (typeof DeviceOrientationEvent === 'undefined') {
+      log('❌ DeviceOrientationEvent not supported.');
+      return;
     }
-  }else{
-    permStatusEl.textContent='no prompt (measuring time to first event)';
-    firstEventStart=performance.now();
-    attachHandler();
-    firstEventTimeout=setTimeout(()=>{
-      if(permTimeEl.textContent==='—'){
-        permTimeEl.textContent='timeout (no event within 5000 ms)';
-        permStatusEl.textContent='no-sensor / desktop';
-      }
-    },5000);
-  }
-  startBtn.disabled=true;stopBtn.disabled=false;
-}
 
-function attachHandler(){
-  handler=(ev)=>{
-    a.textContent=fmt(ev.alpha);
-    b.textContent=fmt(ev.beta);
-    g.textContent=fmt(ev.gamma);
-    if(firstEventStart){
-      const delta=Math.round(performance.now()-firstEventStart);
-      if(permTimeEl.textContent==='—'||permTimeEl.textContent.startsWith('timeout')){
-        permTimeEl.textContent=String(delta);
-        permStatusEl.textContent='event-received';
-        clearTimeout(firstEventTimeout);
-      }
-      firstEventStart=0;
+    // iOS Safari permission flow
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      log('🔒 Calling requestPermission()...');
+      const res = await DeviceOrientationEvent.requestPermission();
+      log('Permission result:', res);
+      if (res !== 'granted') return;
+    } else {
+      log('ℹ️ requestPermission() not available (no popup expected).');
     }
-  };
-  window.addEventListener('deviceorientation',handler,true);
-}
-function stop(){
-  if(handler)window.removeEventListener('deviceorientation',handler,true);
-  handler=null;startBtn.disabled=false;stopBtn.disabled=true;
-}
 
-startBtn.addEventListener('click',start);
-stopBtn.addEventListener('click',stop);
-detectBtn.addEventListener('click',runDetection);
+    window.addEventListener('deviceorientation', e => {
+      log('Event:',
+          'alpha=', e.alpha,
+          'beta=', e.beta,
+          'gamma=', e.gamma,
+          'absolute=', e.absolute);
+    });
 
-async function runDetection(){
-  const log=(...a)=>out.textContent+=a.join(' ')+'\n';
-  out.textContent=''; // clear
-  log('User agent:',navigator.userAgent,'\n');
-
-  if(typeof DeviceOrientationEvent==='undefined'){log('❌ DeviceOrientationEvent not supported.');return;}
-  else log('✅ DeviceOrientationEvent is defined.');
-
-  if(typeof DeviceOrientationEvent.requestPermission==='function'){
-    log('🔒 requestPermission() exists → iOS Safari-style permission model (popup expected).');
-  }else{
-    log('ℹ️ requestPermission() not implemented → Android/desktop behavior (no popup).');
+    log('✅ Listening for deviceorientation events...');
+  } catch (err) {
+    log('⚠️ Error:', err);
   }
-
-  try{
-    const p=await navigator.permissions.query({name:'accelerometer'});
-    log('Permission API (accelerometer):',p.state);
-  }catch(e){
-    log('Permission API not available:',e.message||e);
-  }
-
-  let got=false;
-  const h=(e)=>{got=true;window.removeEventListener('deviceorientation',h);};
-  window.addEventListener('deviceorientation',h);
-  await new Promise(r=>setTimeout(r,2000));
-  window.removeEventListener('deviceorientation',h);
-  log('\n',got?'📡 Received deviceorientation data → sensor active.'
-               :'🚫 No deviceorientation data within 2s → likely no sensors or feature blocked.');
-}
+};
 </script>
 </body>
 </html>
