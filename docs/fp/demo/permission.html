@@ -1,18 +1,119 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Permission States</title>
-  <link rel="stylesheet" href="../styles.css">
-  <style>body{padding:1em;} pre{background:#f6f8fa;padding:1em;border:1px solid #ddd;border-radius:6px;}</style>
-</head>
-<body>
-<h1>Permission State Fingerprinting</h1>
-<p>Shows current permission configuration for geolocation and notifications.</p>
-<div id="status" class="loading">Ready</div>
-<button id="refresh" data-collector="collect_permissions_geolocation_notifications">Run Collector</button>
-<button id="copy">Copy JSON</button>
-<div id="output"></div>
-<script src="../fp.js"></script>
+<meta charset="utf-8">
+<title>FileSystem / IdleDetector / Notification Fingerprinting Demo (Educational)</title>
+<body style="font-family:system-ui;padding:1rem;white-space:pre-wrap">
+<h2>Educational Fingerprinting Surface Demo</h2>
+<p>This demo only shows what information these APIs expose locally.  
+No network requests are made.</p>
+<button id="run">Run Demo</button>
+<pre id="out">Click "Run Demo" to start...</pre>
+
+<script>
+const log = (...a) => out.textContent += a.join(' ') + '\n';
+
+document.getElementById('run').onclick = async () => {
+  out.textContent = ''; // clear
+
+  /* ---------- File System Access API ---------- */
+  if ('showOpenFilePicker' in window) {
+    try {
+      const [handle] = await showOpenFilePicker(); // user selects file
+      log('[FileSystemHandle]');
+      log('name:', handle.name);
+      log('kind:', handle.kind);
+
+      // Unique ID (differs per platform/browser)
+      if ('getUniqueId' in handle) {
+        const id = await handle.getUniqueId();
+        log('uniqueId:', id);
+      } else {
+        log('getUniqueId not supported');
+      }
+
+      // Permission queries
+      if ('queryPermission' in handle) {
+        const perm = await handle.queryPermission({mode: 'readwrite'});
+        log('queryPermission(readwrite):', perm);
+      }
+      if ('requestPermission' in handle) {
+        const perm2 = await handle.requestPermission({mode: 'readwrite'});
+        log('requestPermission(readwrite):', perm2);
+      }
+
+      // Attempt to get file info
+      if ('getFile' in handle) {
+        const file = await handle.getFile();
+        log('File info -> size:', file.size, 'type:', file.type, 'lastModified:', file.lastModified);
+      }
+
+      // Writable capability
+      if ('createWritable' in handle) {
+        const w = await handle.createWritable();
+        log('createWritable supported:', !!w);
+        await w.close();
+      }
+
+    } catch(e) { log('File System error:', e.message); }
+  } else {
+    log('File System Access API not supported in this browser.');
+  }
+
+  log('');
+
+  /* ---------- IdleDetector API ---------- */
+  if ('IdleDetector' in window) {
+    try {
+      log('[IdleDetector]');
+      const perm = await IdleDetector.requestPermission();
+      log('Permission:', perm);
+      if (perm === 'granted') {
+        const detector = new IdleDetector();
+        detector.addEventListener('change', () => {
+          log(`userState=${detector.userState}, screenState=${detector.screenState}`);
+        });
+        await detector.start();
+        log('IdleDetector started. Change your activity or lock screen to trigger updates.');
+      }
+    } catch(e) { log('IdleDetector error:', e.message); }
+  } else {
+    log('IdleDetector not supported.');
+  }
+
+  log('');
+
+  /* ---------- Notifications API ---------- */
+  if ('Notification' in window) {
+    log('[Notification]');
+    log('maxActions:', Notification.maxActions);
+    log('current permission:', Notification.permission);
+
+    // Request permission if needed
+    if (Notification.permission !== 'granted') {
+      const perm = await Notification.requestPermission();
+      log('requestPermission() ->', perm);
+    }
+
+    if (Notification.permission === 'granted') {
+      const n = new Notification('Fingerprint Demo', {
+        body: 'Example notification body',
+        tag: 'demoTag',
+        timestamp: Date.now(),
+        vibrate: [100,50,100],
+        requireInteraction: false,
+      });
+      n.onclick = () => {
+        log('Notification clicked.');
+        n.close();
+      };
+      log('Notification shown with tag:', n.tag);
+    }
+  } else {
+    log('Notification API not supported.');
+  }
+
+  log('\nDemo finished. Check above for exposed attributes.');
+};
+</script>
 </body>
 </html>
