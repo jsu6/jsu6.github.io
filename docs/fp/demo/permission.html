@@ -86,7 +86,7 @@ startButton.addEventListener("click", async () => {
     });
 
     await idleDetector.start({
-      threshold: 3_000, // 1 minute idle threshold
+      threshold: 60_000, // 1 minute idle threshold
       signal,
     });
     log("IdleDetector is active. Move or lock screen to trigger changes.");
