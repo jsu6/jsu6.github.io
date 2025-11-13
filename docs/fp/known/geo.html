@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<meta charset="utf-8">
+<title>Geolocation Minimal PoC</title>
+<body style="font-family:system-ui;padding:1rem">
+<h3>Geolocation Minimal PoC</h3>
+
+<button id="get">Get Current Position</button>
+<button id="watch">Start Watch</button>
+<button id="clear" disabled>Clear Watch</button>
+
+<pre id="out">Waiting...</pre>
+
+<script>
+const out = document.getElementById('out');
+const log = (...a) => out.textContent += a.join(' ') + '\n';
+let watchId = null;
+
+function onSuccess(pos) {
+  const { latitude, longitude, accuracy } = pos.coords;
+  log('📍 Position:',
+      'lat=', latitude.toFixed(6),
+      'lon=', longitude.toFixed(6),
+      'accuracy=', accuracy, 'm');
+}
+
+function onError(err) {
+  log('⚠️ Error:', err.message);
+}
+
+document.getElementById('get').onclick = () => {
+  out.textContent = '';
+  log('▶️ Calling getCurrentPosition()...');
+  if (!navigator.geolocation) return log('❌ Geolocation not supported.');
+  navigator.geolocation.getCurrentPosition(onSuccess, onError);
+};
+
+document.getElementById('watch').onclick = () => {
+  out.textContent = '';
+  log('▶️ Calling watchPosition()...');
+  if (!navigator.geolocation) return log('❌ Geolocation not supported.');
+  watchId = navigator.geolocation.watchPosition(onSuccess, onError);
+  document.getElementById('clear').disabled = false;
+};
+
+document.getElementById('clear').onclick = () => {
+  if (watchId !== null) {
+    log('🛑 Calling clearWatch()...');
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    document.getElementById('clear').disabled = true;
+  }
+};
+</script>
+</body>
+</html>
