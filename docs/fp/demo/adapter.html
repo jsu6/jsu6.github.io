@@ -1,59 +1,54 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Minimal WebGPU Dump</title>
+  <meta charset="UTF-8" />
+  <title>WebGPU Adapter Info Test</title>
 </head>
 <body>
-<pre id="out">Running…</pre>
+  <h1>WebGPU Adapter Info</h1>
+  <pre id="output">Checking WebGPU...</pre>
 
-<script type="module">
-async function main() {
-  const out = document.getElementById("out");
-  out.textContent = "";
+  <script>
+    async function init() {
+      const out = document.getElementById("output");
 
-  function print(...msg) {
-    out.textContent += msg.join(" ") + "\n";
-    console.log(...msg);
-  }
+      if (!("gpu" in navigator)) {
+        out.textContent = "WebGPU not supported in this browser.";
+        return;
+      }
 
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    print("Couldn't request WebGPU adapter.");
-    return;
-  }
+      try {
+        // Request the adapter
+        const adapter = await navigator.gpu.requestAdapter({
+          powerPreference: "high-performance"
+        });
 
-  // ============================
-  // INFO
-  // ============================
-  print("=== adapter.info ===");
-  let info = adapter.info;
-  if (info) {
-    for (const [k, v] of Object.entries(info)) {
-      print(k + ":", v);
+        if (!adapter) {
+          out.textContent = "No GPU adapter found.";
+          return;
+        }
+
+        // Build a readable object
+        const info = {
+          vendor: adapter.info.vendor ?? "(hidden)",
+          architecture: adapter.info.architecture ?? "(hidden)",
+          device: adapter.info.device ?? "(hidden)",
+          description: adapter.info.description ?? "(hidden)",
+        };
+
+        out.textContent = "GPU Adapter Info:\n" + JSON.stringify(info, null, 2);
+
+        console.log("Full adapter:", adapter);
+        console.log("Adapter info:", adapter.info);
+
+      } catch (err) {
+        out.textContent = "Error: " + err;
+        console.error(err);
+      }
     }
-  } else {
-    print("adapter.info is not available");
-  }
 
-  // ============================
-  // FEATURES
-  // ============================
-  print("\n=== adapter.features ===");
-  for (const feature of adapter.features) {
-    print(feature);
-  }
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
 
-  // ============================
-  // LIMITS
-  // ============================
-  print("\n=== adapter.limits ===");
-  for (const key of Object.keys(adapter.limits)) {
-    print(key + ":", adapter.limits[key]);
-  }
-}
-
-main();
-</script>
 </body>
 </html>
