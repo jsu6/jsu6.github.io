@@ -2,11 +2,11 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>WebNN Minimal Tests</title>
+  <title>WebNN Advanced Minimal UI</title>
 </head>
 <body>
 
-<h2>WebNN Test Examples (Minimal UI)</h2>
+<h2>WebNN Test Examples (Minimal UI, Advanced)</h2>
 
 <button onclick="runExample1()">Run Example 1</button>
 <pre id="out1"></pre>
@@ -26,18 +26,32 @@
 <button onclick="runExample6()">Run Example 6 (Mini MLP)</button>
 <pre id="out6"></pre>
 
+<hr>
+
+<h3>Advanced Calculations</h3>
+
+<button onclick="example7_multiBranch()">Run Example 7 (Multi-Branch Chain)</button>
+<pre id="out7"></pre>
+
+<button onclick="example8_layerNorm()">Run Example 8 (LayerNorm)</button>
+<pre id="out8"></pre>
+
+<button onclick="example9_conv1d()">Run Example 9 (Simulated Conv1D)</button>
+<pre id="out9"></pre>
+
+<button onclick="example10_pipeline()">Run Example 10 (Full MLP+GELU+Norm Pipeline)</button>
+<pre id="out10"></pre>
+
 <script>
 
-// ---------------------------------------------------------------------
-// Helper functions
-// ---------------------------------------------------------------------
-function arr(a) {
-  return '[' + Array.from(a).join(', ') + ']';
-}
+// =======================================================
+// Helper
+// =======================================================
+function arr(a) { return '[' + Array.from(a).join(', ') + ']'; }
 
-// ---------------------------------------------------------------------
+// =======================================================
 // Example 1
-// ---------------------------------------------------------------------
+// =======================================================
 async function runExample1() {
   const out = document.getElementById("out1");
   out.textContent = "Running Example 1...";
@@ -52,77 +66,59 @@ async function runExample1() {
 
   const c1 = b.constant(desc, new Float32Array(TENSOR_SIZE).fill(0.5));
   const c2 = b.constant(desc, new Float32Array(TENSOR_SIZE).fill(0.5));
-
   const in1 = b.input("in1", desc);
   const in2 = b.input("in2", desc);
 
-  const a1 = b.add(c1, in1);
-  const a2 = b.add(c2, in2);
-  const Y  = b.mul(a1, a2);
-
+  const Y = b.mul(b.add(c1,in1), b.add(c2,in2));
   const graph = await b.build({Y});
 
-  const t1 = await ctx.createTensor({dataType:"float32", shape:TENSOR_SHAPE, writable:true});
-  const t2 = await ctx.createTensor({dataType:"float32", shape:TENSOR_SHAPE, writable:true});
-  const tY = await ctx.createTensor({dataType:"float32", shape:TENSOR_SHAPE, readable:true});
+  const t1 = await ctx.createTensor({...desc, writable:true});
+  const t2 = await ctx.createTensor({...desc, writable:true});
+  const tY = await ctx.createTensor({...desc, readable:true});
 
   const d1 = new Float32Array(TENSOR_SIZE).fill(1.0);
   const d2 = new Float32Array(TENSOR_SIZE).fill(0.8);
 
   await ctx.writeTensor(t1, d1);
   await ctx.writeTensor(t2, d2);
-
   await ctx.dispatch(graph, {in1:t1, in2:t2}, {Y:tY});
 
-  const res = new Float32Array(await ctx.readTensor(tY));
-  out.textContent =
-    "Input1: " + arr(d1) + "\n" +
-    "Input2: " + arr(d2) + "\n" +
-    "Result: " + arr(res);
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
 }
 
-// ---------------------------------------------------------------------
+// =======================================================
 // Example 2
-// ---------------------------------------------------------------------
+// =======================================================
 async function runExample2() {
   const out = document.getElementById("out2");
   out.textContent = "Running Example 2...";
 
   const desc = { dataType:"float32", shape:[2,2] };
-
   const ctx = await navigator.ml.createContext();
   const b = new MLGraphBuilder(ctx);
 
   const A = b.input("A", desc);
   const B = b.input("B", desc);
-  const k = b.constant(desc, new Float32Array(4).fill(0.2));
-  const C = b.add(b.mul(A, k), B);
+  const C = b.add(b.mul(A, b.constant(desc,new Float32Array(4).fill(0.2))), B);
 
   const graph = await b.build({C});
-
   const tA = await ctx.createTensor({...desc, writable:true});
   const tB = await ctx.createTensor({...desc, writable:true});
-  const tC = await ctx.createTensor({dataType:"float32", shape:[2,2], readable:true});
+  const tC = await ctx.createTensor({...desc, readable:true});
 
   const dA = new Float32Array(4).fill(1.0);
   const dB = new Float32Array(4).fill(0.8);
 
   await ctx.writeTensor(tA, dA);
   await ctx.writeTensor(tB, dB);
+  await ctx.dispatch(graph, {A:tA,B:tB}, {C:tC});
 
-  await ctx.dispatch(graph, {A:tA, B:tB}, {C:tC});
-
-  const res = new Float32Array(await ctx.readTensor(tC));
-
-  out.textContent =
-    "A: " + arr(dA) + "\n" +
-    "B: " + arr(dB) + "\n" +
-    "C = 0.2*A + B = " + arr(res);
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tC)));
 }
 
-// ---------------------------------------------------------------------
-// Example 3 – MatMul
-// ---------------------------------------------------------------------
+// =======================================================
+// Example 3 (MatMul)
+// =======================================================
 async function runExample3() {
   const out = document.getElementById("out3");
   out.textContent = "Running Example 3...";
@@ -140,25 +136,19 @@ async function runExample3() {
   const tB = await ctx.createTensor({dataType:"float32", shape:[3,2], writable:true});
   const tM = await ctx.createTensor({dataType:"float32", shape:[2,2], readable:true});
 
-  const dA = new Float32Array([1,2,3, 4,5,6]);
-  const dB = new Float32Array([7,8, 9,10, 11,12]);
+  const dA = new Float32Array([1,2,3,4,5,6]);
+  const dB = new Float32Array([7,8,9,10,11,12]);
 
   await ctx.writeTensor(tA, dA);
   await ctx.writeTensor(tB, dB);
+  await ctx.dispatch(graph, {A:tA,B:tB}, {M:tM});
 
-  await ctx.dispatch(graph, {A:tA, B:tB}, {M:tM});
-
-  const res = new Float32Array(await ctx.readTensor(tM));
-
-  out.textContent =
-    "A: " + arr(dA) + "\n" +
-    "B: " + arr(dB) + "\n" +
-    "A×B = " + arr(res);
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tM)));
 }
 
-// ---------------------------------------------------------------------
-// Example 4 – sin(x) + cos(x)
-// ---------------------------------------------------------------------
+// =======================================================
+// Example 4 (Sin + Cos)
+// =======================================================
 async function runExample4() {
   const out = document.getElementById("out4");
   out.textContent = "Running Example 4...";
@@ -170,25 +160,19 @@ async function runExample4() {
   const Y = b.add(b.sin(X), b.cos(X));
 
   const graph = await b.build({Y});
-
   const tX = await ctx.createTensor({dataType:"float32", shape:[4], writable:true});
   const tY = await ctx.createTensor({dataType:"float32", shape:[4], readable:true});
 
-  const dX = new Float32Array([0, Math.PI/2, Math.PI, 3*Math.PI/2]);
-
+  const dX = new Float32Array([0,Math.PI/2,Math.PI,3*Math.PI/2]);
   await ctx.writeTensor(tX, dX);
+
   await ctx.dispatch(graph, {X:tX}, {Y:tY});
-
-  const res = new Float32Array(await ctx.readTensor(tY));
-
-  out.textContent =
-    "X: " + arr(dX) + "\n" +
-    "sin(x)+cos(x): " + arr(res);
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
 }
 
-// ---------------------------------------------------------------------
-// Example 5 – Broadcast + ReLU
-// ---------------------------------------------------------------------
+// =======================================================
+// Example 5 (Broadcast + ReLU)
+// =======================================================
 async function runExample5() {
   const out = document.getElementById("out5");
   out.textContent = "Running Example 5...";
@@ -200,38 +184,32 @@ async function runExample5() {
   const X = b.input("X", desc);
 
   const scale = b.constant({dataType:"float32", shape:[1,1,1,3]},
-                           new Float32Array([1.0,0.5,2.0]));
-
-  const bias = b.constant({dataType:"float32", shape:[1,1,1,3]},
-                          new Float32Array([0.1,-0.2,0.3]));
+                           new Float32Array([1,0.5,2]));
+  const bias  = b.constant({dataType:"float32", shape:[1,1,1,3]},
+                           new Float32Array([0.1,-0.2,0.3]));
 
   const Y = b.relu(b.add(b.mul(X,scale), bias));
-
   const graph = await b.build({Y});
 
   const tX = await ctx.createTensor({...desc, writable:true});
-  const tY = await ctx.createTensor({dataType:"float32", shape:[1,2,2,3], readable:true});
+  const tY = await ctx.createTensor({...desc, readable:true});
 
   const dX = new Float32Array([
-     1,2,3,
-     4,5,6,
-     1,1,1,
-     0,0.5,2
+    1,2,3,
+    4,5,6,
+    1,1,1,
+    0,0.5,2
   ]);
 
   await ctx.writeTensor(tX, dX);
   await ctx.dispatch(graph, {X:tX}, {Y:tY});
 
-  const res = new Float32Array(await ctx.readTensor(tY));
-
-  out.textContent =
-    "Input X: " + arr(dX) + "\n" +
-    "Output Y: " + arr(res);
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
 }
 
-// ---------------------------------------------------------------------
-// Example 6 – Mini MLP
-// ---------------------------------------------------------------------
+// =======================================================
+// Example 6 (Mini MLP)
+// =======================================================
 async function runExample6() {
   const out = document.getElementById("out6");
   out.textContent = "Running Example 6...";
@@ -242,15 +220,11 @@ async function runExample6() {
   const X = b.input("X", {dataType:"float32", shape:[1,4]});
 
   function dense(input, inF, outF) {
-    const W = b.constant(
-      {dataType:"float32", shape:[inF,outF]},
-      new Float32Array(inF*outF).fill(0.1)
-    );
-    const B = b.constant(
-      {dataType:"float32", shape:[1,outF]},
-      new Float32Array(outF).fill(0.01)
-    );
-    return b.relu(b.add(b.matmul(input, W), B));
+    const W = b.constant({dataType:"float32", shape:[inF,outF]},
+                         new Float32Array(inF*outF).fill(0.1));
+    const B = b.constant({dataType:"float32", shape:[1,outF]},
+                         new Float32Array(outF).fill(0.01));
+    return b.relu(b.add(b.matmul(input,W),B));
   }
 
   const L1 = dense(X,4,6);
@@ -259,19 +233,197 @@ async function runExample6() {
   const Y  = dense(L3,4,2);
 
   const graph = await b.build({Y});
-
   const tX = await ctx.createTensor({dataType:"float32", shape:[1,4], writable:true});
   const tY = await ctx.createTensor({dataType:"float32", shape:[1,2], readable:true});
 
   await ctx.writeTensor(tX, new Float32Array([1,2,3,4]));
-
   await ctx.dispatch(graph, {X:tX}, {Y:tY});
 
-  const res = new Float32Array(await ctx.readTensor(tY));
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
+}
 
-  out.textContent =
-    "Input: [1,2,3,4]\n" +
-    "MLP Output: " + arr(res);
+// =======================================================
+// Example 7 — Multi-Branch Computational Chain
+// =======================================================
+async function example7_multiBranch() {
+  const out = document.getElementById("out7");
+  out.textContent = "Running Example 7...";
+
+  const ctx = await navigator.ml.createContext();
+  const b = new MLGraphBuilder(ctx);
+
+  const A = b.input("A", {dataType:"float32", shape:[1,4]});
+
+  const W1 = b.constant({dataType:"float32", shape:[4,4]},
+                        new Float32Array(16).fill(0.3));
+  const W2 = b.constant({dataType:"float32", shape:[4,4]},
+                        new Float32Array(16).fill(0.1));
+
+  const B1 = b.constant({dataType:"float32", shape:[1,4]},
+                        new Float32Array([0.1,0.2,0.3,0.4]));
+  const B2 = b.constant({dataType:"float32", shape:[1,4]},
+                        new Float32Array([0.05,0.1,0.15,0.2]));
+
+  const branch1 = b.add(b.matmul(A,W1), B1);
+  const branch2 = b.sin(b.add(b.matmul(A,W2), B2));
+
+  const Y = b.relu(b.add(branch1, branch2));
+  const graph = await b.build({Y});
+
+  const tA = await ctx.createTensor({dataType:"float32", shape:[1,4], writable:true});
+  const tY = await ctx.createTensor({dataType:"float32", shape:[1,4], readable:true});
+
+  await ctx.writeTensor(tA, new Float32Array([1,2,3,4]));
+  await ctx.dispatch(graph, {A:tA}, {Y:tY});
+
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
+}
+
+// =======================================================
+// Example 8 — LayerNorm Chain
+// =======================================================
+async function example8_layerNorm() {
+  const out = document.getElementById("out8");
+  out.textContent = "Running Example 8...";
+
+  const ctx = await navigator.ml.createContext();
+  const b = new MLGraphBuilder(ctx);
+
+  const X = b.input("X", {dataType:"float32", shape:[1,8]});
+  const eps = 1e-5;
+
+  const mean = b.div(
+    b.reduceSum(X, {axes:[1], keepDimensions:true}),
+    b.constant({dataType:"float32", shape:[1,1]}, new Float32Array([8]))
+  );
+
+  const diff = b.sub(X, mean);
+  const sq = b.mul(diff,diff);
+
+  const variance = b.div(
+    b.reduceSum(sq, {axes:[1], keepDimensions:true}),
+    b.constant({dataType:"float32", shape:[1,1]}, new Float32Array([8]))
+  );
+
+  const denom = b.sqrt(b.add(variance,
+    b.constant({dataType:"float32", shape:[1,1]}, new Float32Array([eps]))
+  ));
+
+  const Y = b.div(diff, denom);
+
+  const graph = await b.build({Y});
+
+  const tX = await ctx.createTensor({dataType:"float32", shape:[1,8], writable:true});
+  const tY = await ctx.createTensor({dataType:"float32", shape:[1,8], readable:true});
+
+  await ctx.writeTensor(tX, new Float32Array([1,2,3,4,5,6,7,8]));
+  await ctx.dispatch(graph, {X:tX}, {Y:tY});
+
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
+}
+
+// =======================================================
+// Example 9 — Simulated Conv1D
+// =======================================================
+async function example9_conv1d() {
+  const out = document.getElementById("out9");
+  out.textContent = "Running Example 9...";
+
+  const ctx = await navigator.ml.createContext();
+  const b = new MLGraphBuilder(ctx);
+
+  const X = b.input("X", {dataType:"float32", shape:[1,6]});
+  const W = b.constant({dataType:"float32", shape:[1,3]},
+                       new Float32Array([0.2,0.5,0.3]));
+
+  const outputs = [];
+  for (let i=0; i<4; i++) {
+    const slice = b.slice(X, [0,i],[1,i+3]);
+    const mul = b.mul(slice, W);
+    outputs.push(b.reduceSum(mul, {axes:[1], keepDimensions:false}));
+  }
+
+  const Y = b.concat(outputs, 1);
+  const graph = await b.build({Y});
+
+  const tX = await ctx.createTensor({dataType:"float32", shape:[1,6], writable:true});
+  const tY = await ctx.createTensor({dataType:"float32", shape:[1,4], readable:true});
+
+  await ctx.writeTensor(tX, new Float32Array([1,2,3,4,5,6]));
+  await ctx.dispatch(graph, {X:tX}, {Y:tY});
+
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
+}
+
+// =======================================================
+// Example 10 — Full Pipeline (GELU + LayerNorm)
+// =======================================================
+async function example10_pipeline() {
+  const out = document.getElementById("out10");
+  out.textContent = "Running Example 10...";
+
+  const ctx = await navigator.ml.createContext();
+  const b = new MLGraphBuilder(ctx);
+
+  const A = b.input("A", {dataType:"float32", shape:[1,4]});
+
+  const W = b.constant({dataType:"float32", shape:[4,4]},
+                       new Float32Array(16).fill(0.2));
+
+  const H = b.matmul(A, W);
+
+  const c044 = b.constant({dataType:"float32", shape:[1,4]},
+                          new Float32Array([0.044715,0.044715,0.044715,0.044715]));
+  const sqrt2pi = Math.sqrt(2/Math.PI);
+
+  const X3 = b.mul(b.mul(H,H),H);
+  const inner = b.add(H, b.mul(c044,X3));
+
+  const scaled = b.mul(
+    b.constant({dataType:"float32", shape:[1,4]},
+               new Float32Array([sqrt2pi,sqrt2pi,sqrt2pi,sqrt2pi])),
+    inner
+  );
+
+  const tanhVal = b.tanh(scaled);
+
+  const gelu = b.mul(
+    b.mul(H, b.constant({dataType:"float32",shape:[1,4]},new Float32Array([0.5,0.5,0.5,0.5]))),
+    b.add(b.constant({dataType:"float32",shape:[1,4]},new Float32Array([1,1,1,1])), tanhVal)
+  );
+
+  const mean = b.div(
+    b.reduceSum(gelu, {axes:[1], keepDimensions:true}),
+    b.constant({dataType:"float32", shape:[1,1]}, new Float32Array([4]))
+  );
+  const diff = b.sub(gelu,mean);
+  const varVal = b.div(
+    b.reduceSum(b.mul(diff,diff), {axes:[1], keepDimensions:true}),
+    b.constant({dataType:"float32", shape:[1,1]}, new Float32Array([4]))
+  );
+
+  const denom = b.sqrt(b.add(varVal,
+    b.constant({dataType:"float32", shape:[1,1]}, new Float32Array([1e-5]))
+  ));
+
+  const norm = b.div(diff, denom);
+
+  const scale = b.constant({dataType:"float32", shape:[1,4]},
+                           new Float32Array([1.2,1.0,0.8,1.5]));
+  const bias  = b.constant({dataType:"float32", shape:[1,4]},
+                           new Float32Array([0.1,-0.1,0.05,0.2]));
+
+  const Y = b.add(b.mul(norm,scale), bias);
+
+  const graph = await b.build({Y});
+
+  const tA = await ctx.createTensor({dataType:"float32", shape:[1,4], writable:true});
+  const tY = await ctx.createTensor({dataType:"float32", shape:[1,4], readable:true});
+
+  await ctx.writeTensor(tA, new Float32Array([1,2,3,4]));
+  await ctx.dispatch(graph, {A:tA}, {Y:tY});
+
+  out.textContent = arr(new Float32Array(await ctx.readTensor(tY)));
 }
 
 </script>
