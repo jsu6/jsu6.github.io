@@ -1,373 +1,119 @@
 <!doctype html>
 <meta charset="utf-8" />
-<title>WebXR PoC — feature/behavior probe (no device required)</title>
+<title>WebXR PoC (Chromium-safe, one frame)</title>
 <style>
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px; max-width: 1000px; margin: auto; }
-  button { padding: 8px 12px; }
-  pre { background: #f6f7f9; border: 1px solid #e4e7eb; padding: 12px; overflow: auto; }
-  .row { display:flex; gap:8px; align-items:center; margin: 8px 0; }
-  .ok { color: #0a7f2e; }
-  .warn { color: #a15a00; }
-  .err { color: #b00020; }
+  body { font-family: system-ui; padding: 1rem; max-width: 900px; margin:auto; }
+  button { padding: .4rem .8rem; margin-right: .4rem; }
+  pre { background:#f6f7f9; border:1px solid #ccc; padding:.8rem; overflow:auto; }
 </style>
-<h1>WebXR Proof of Concept (no device required)</h1>
-<p>Click “Run” to attempt an inline WebXR session and probe the requested APIs. Results include presence, return values, and errors (useful for cross-browser differences).</p>
-<div class="row">
-  <button id="run">Run</button>
-  <button id="copy">Copy JSON</button>
-  <span id="status"></span>
-</div>
+
+<h2>WebXR Proof of Concept (safe single-frame)</h2>
+<p>This demo requests an inline XR session, probes key APIs, and exits cleanly.
+Works even without XR hardware.</p>
+<button id="run">Run</button>
+<button id="copy">Copy JSON</button>
+<span id="status"></span>
 <pre id="out">Ready.</pre>
 
 <script>
 (async () => {
-  const out = document.getElementById('out');
-  const status = document.getElementById('status');
-  const setStatus = (t, cls='') => { status.textContent = t; status.className = cls; };
-  const log = (o) => { out.textContent = typeof o === 'string' ? o : JSON.stringify(o, null, 2); };
+  const out = document.getElementById("out");
+  const status = document.getElementById("status");
+  const setStatus = (t,c="") => { status.textContent=t; status.className=c; };
+  const log = (o) => { out.textContent = JSON.stringify(o,null,2); };
 
-  function safeCall(fn) {
+  function safe(fn) {
     try {
       const v = fn();
-      if (v && typeof v.then === 'function') {
-        return v.then(res => ({ ok:true, value:res })).catch(e => ({ ok:false, error:String(e), name:e?.name, code:e?.code }));
-      }
-      return { ok:true, value:v };
-    } catch (e) {
-      return { ok:false, error:String(e), name:e?.name, code:e?.code };
-    }
+      if (v && typeof v.then==="function")
+        return v.then(val=>({ok:true,value:val})).catch(e=>({ok:false,error:String(e)}));
+      return {ok:true,value:v};
+    } catch(e) { return {ok:false,error:String(e)}; }
   }
 
-  function presence(obj, key) {
-    const exists = !!(obj && key in obj);
-    return { exists, type: exists ? typeof obj[key] : null };
-  }
-
-  function existsGlobal(name) {
-    return { exists: (name in globalThis), type: (name in globalThis) ? typeof globalThis[name] : null };
-  }
-
-  // Collect here
-  let RESULTS = {
-    env: {
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      secureContext: !!window.isSecureContext,
-      hasNavigatorXR: !!(navigator.xr),
-    },
-    presence: {
-      XRAnchor: existsGlobal('XRAnchor'),
-      XRDepthInformation: existsGlobal('XRDepthInformation'),
-      XRFrame: existsGlobal('XRFrame'),
-      XRGPUBinding: existsGlobal('XRGPUBinding'),
-      XRWebGLBinding: existsGlobal('XRWebGLBinding'),
-      XRHand: existsGlobal('XRHand'),
-      XRHitTestSource: existsGlobal('XRHitTestSource'),
-      XRImageTrackingResult: existsGlobal('XRImageTrackingResult'),
-      XRJointSpace: existsGlobal('XRJointSpace'),
-      XRLightEstimate: existsGlobal('XRLightEstimate'),
-      XRPlane: existsGlobal('XRPlane'),
-      XRRay: existsGlobal('XRRay'),
-      XRRigidTransform: existsGlobal('XRRigidTransform'),
-      XRSession: existsGlobal('XRSession'),
-      XRView: existsGlobal('XRView'),
-      XRViewerPose: existsGlobal('XRViewerPose'),
-      XRWebGLLayer: existsGlobal('XRWebGLLayer'),
-    },
-    support: {},
-    values: {},
-    errors: {}
-  };
+  function exists(name) { return (name in globalThis); }
 
   async function run() {
-    setStatus('Running…', 'warn');
-    const supportsInline = await (navigator.xr ? navigator.xr.isSessionSupported('inline') : Promise.resolve(false)).catch(() => false);
-    RESULTS.support.inlineSession = !!supportsInline;
+    setStatus("Running...");
+    const res = { env:{ua:navigator.userAgent}, support:{}, values:{}, errors:{} };
 
-    let session = null;
-    let refSpace = null;
-    let gl = null;
-    let canvas = null;
-    let baseLayer = null;
-
-    if (!supportsInline) {
-      RESULTS.errors.inlineSession = 'navigator.xr.isSessionSupported("inline") is false or navigator.xr missing';
-      RESULTS.values.constructor_only = constructorOnlyTests();
-      setStatus('Finished (no inline session).', 'ok');
-      log(RESULTS);
-      return;
+    if(!navigator.xr) {
+      res.errors.noXR = "navigator.xr not found";
+      log(res); setStatus("Done (no XR).","ok"); return;
     }
 
-    // Try to request an inline session with lots of optional features (they may fail; that’s informative).
-    const optionalFeatures = [
-      'anchors',
-      'hit-test',
-      'hand-tracking',
-      'light-estimation',
-      'plane-detection',
-      'depth-sensing',
-      'image-tracking',
-      'dom-overlay',
-      'layers',
-      'bounded-floor',
-      'local-floor'
-    ];
-    const req = await safeCall(() => navigator.xr.requestSession('inline', { requiredFeatures: [], optionalFeatures }));
-    if (!req.ok) {
-      RESULTS.errors.requestSession = req;
-      RESULTS.values.constructor_only = constructorOnlyTests();
-      setStatus('Finished (session request failed).', 'ok');
-      log(RESULTS);
-      return;
-    }
-    session = req.value;
+    const inline = await navigator.xr.isSessionSupported("inline").catch(()=>false);
+    if(!inline){ res.errors.noInline="inline not supported"; log(res); setStatus("Done.","ok"); return; }
 
-    // Reference space
-    const rs = await safeCall(() => session.requestReferenceSpace('viewer'));
-    if (!rs.ok) {
-      RESULTS.errors.requestReferenceSpace = rs;
-    } else {
-      refSpace = rs.value;
-    }
+    const sess = await navigator.xr.requestSession("inline",{optionalFeatures:[
+      "anchors","hit-test","hand-tracking","light-estimation","plane-detection","depth-sensing","image-tracking"
+    ]}).catch(e=>({error:String(e)}));
+    if(!sess || sess.error){ res.errors.session=String(sess.error||"fail"); log(res); setStatus("Done.","ok"); return; }
 
-    // WebGL + XRWebGLLayer
-    try {
-      canvas = document.createElement('canvas');
-      gl = canvas.getContext('webgl', { xrCompatible: true }) || canvas.getContext('experimental-webgl');
-      if (gl && session) {
-        await gl.makeXRCompatible?.();
-        baseLayer = new XRWebGLLayer(session, gl);
-        const urs = safeCall(() => session.updateRenderState({ baseLayer }));
-        RESULTS.support.XRSession_updateRenderState = urs.ok;
-      } else {
-        RESULTS.errors.webgl = 'WebGL context not available';
-      }
-    } catch (e) {
-      RESULTS.errors.webgl = String(e);
-    }
+    let refSpace=null;
+    try{ refSpace=await sess.requestReferenceSpace("viewer"); }catch{}
 
-    // Try XRWebGLLayer.getViewport via a single RAF
-    await new Promise(resolve => {
-      session.requestAnimationFrame(async (t, frame) => {
-        try {
-          if (!refSpace) refSpace = (await session.requestReferenceSpace('viewer').catch(()=>null));
-          const pose = frame.getViewerPose(refSpace);
-          RESULTS.support.XRViewerPose_views = !!pose?.views;
-          RESULTS.values.XRViewerPose_views_length = pose?.views?.length ?? null;
+    // WebGL setup
+    const canvas=document.createElement("canvas");
+    const gl=canvas.getContext("webgl",{xrCompatible:true});
+    await gl?.makeXRCompatible?.();
+    const layer=new XRWebGLLayer(sess,gl);
+    sess.updateRenderState({baseLayer:layer});
 
-          if (pose?.views?.length && baseLayer) {
-            const vp = baseLayer.getViewport(pose.views[0]);
-            RESULTS.support.XRWebGLLayer_getViewport = !!vp;
-            RESULTS.values.XRWebGLLayer_getViewport = vp ? { x: vp.x, y: vp.y, width: vp.width, height: vp.height } : null;
-            RESULTS.values.XRView_eye = pose.views[0].eye ?? null;
-            RESULTS.values.XRView_refSpaceFromView_exists = presence(pose.views[0], 'refSpaceFromView').exists ? true : false;
-          }
+    // Constructor-only probes (no session)
+    res.values.XRRay = exists("XRRay") ? (()=>{const r=new XRRay();return{
+      origin:r.origin, direction:r.direction, matrix:Array.from(r.matrix)}})() : null;
+    res.values.XRRigidTransform = exists("XRRigidTransform") ? (()=>{const t=new XRRigidTransform();
+      return{pos:t.position,orient:t.orientation,inv:!!t.inverse}})() : null;
 
-          // ---- Anchors ----
-          if ('createAnchor' in frame && refSpace) {
-            const a = await safeCall(() => frame.createAnchor(new XRRigidTransform(), refSpace));
-            RESULTS.support.XRFrame_createAnchor = a.ok;
-            RESULTS.errors.XRFrame_createAnchor = a.ok ? null : a;
-            if (a.ok && a.value) {
-              const del = safeCall(() => a.value.delete());
-              RESULTS.support.XRAnchor_delete = del.ok;
-              RESULTS.errors.XRAnchor_delete = del.ok ? null : del;
-            }
-          } else {
-            RESULTS.support.XRFrame_createAnchor = false;
-            RESULTS.errors.XRFrame_createAnchor = 'frame.createAnchor missing or no refSpace';
-          }
-
-          // ---- Depth Information ----
-          try {
-            if (pose?.views?.length) {
-              let depth = null;
-              try {
-                depth = frame.getDepthInformation?.(pose.views[0]);
-              } catch (e) {}
-              RESULTS.support.XRDepthInformation_exists = !!depth;
-              if (depth) {
-                RESULTS.values.XRDepthInformation_width  = depth.width ?? null;
-                RESULTS.values.XRDepthInformation_height = depth.height ?? null;
-                RESULTS.support.XRDepthInformation_rawValueToMeters = typeof depth.rawValueToMeters === 'function';
-                RESULTS.values.XRDepthInformation_rawValueToMeters_1 = RESULTS.support.XRDepthInformation_rawValueToMeters ? safeCall(() => depth.rawValueToMeters(1)).value ?? null : null;
-                RESULTS.support.XRDepthInformation_normDepthBufferFromNormView = typeof depth.normDepthBufferFromNormView === 'function';
-                RESULTS.errors.XRDepthInformation_calls = null;
-              } else {
-                RESULTS.errors.XRDepthInformation_calls = 'getDepthInformation returned null/undefined';
-              }
-            }
-          } catch (e) {
-            RESULTS.errors.XRDepthInformation = String(e);
-          }
-
-          // ---- Hit Test ----
-          if (session.requestHitTestSource) {
-            const h = await safeCall(() => session.requestHitTestSource({ space: refSpace }));
-            RESULTS.support.XRHitTestSource_request = h.ok;
-            if (h.ok && h.value) {
-              const c = safeCall(() => h.value.cancel());
-              RESULTS.support.XRHitTestSource_cancel = c.ok;
-              RESULTS.errors.XRHitTestSource_cancel = c.ok ? null : c;
-            } else {
-              RESULTS.errors.XRHitTestSource_request = h;
-            }
-          } else {
-            RESULTS.support.XRHitTestSource_cancel = false;
-            RESULTS.errors.XRHitTestSource_cancel = 'requestHitTestSource missing';
-          }
-
-          // ---- Image Tracking ----
-          try {
-            const imgs = frame.getImageTrackingResults?.();
-            RESULTS.support.XRImageTrackingResult_available = !!imgs;
-            const first = imgs && imgs[0];
-            if (first) {
-              RESULTS.values.XRImageTrackingResult_index = first.index ?? null;
-              RESULTS.values.XRImageTrackingResult_measuredWidthInMeters = first.measuredWidthInMeters ?? null;
-              RESULTS.values.XRImageTrackingResult_trackingState = first.trackingState ?? null;
-              RESULTS.values.XRImageTrackingResult_imageSpace_exists = !!first.imageSpace;
-            }
-          } catch (e) {
-            RESULTS.errors.XRImageTrackingResult = String(e);
-          }
-
-          // ---- Light Estimation ----
-          if (session.requestLightProbe) {
-            const probe = await safeCall(() => session.requestLightProbe());
-            RESULTS.support.XRLightProbe = probe.ok;
-            if (probe.ok) {
-              const le = frame.getLightEstimate?.(probe.value);
-              RESULTS.support.XRLightEstimate_exists = !!le;
-              if (le) {
-                RESULTS.values.XRLightEstimate_primaryLightDirection = le.primaryLightDirection ? Array.from(le.primaryLightDirection) : null;
-                RESULTS.values.XRLightEstimate_primaryLightIntensity = le.primaryLightIntensity ? Array.from(le.primaryLightIntensity) : null;
-                RESULTS.values.XRLightEstimate_sphericalHarmonicsCoefficients = le.sphericalHarmonicsCoefficients ? Array.from(le.sphericalHarmonicsCoefficients) : null;
-              }
-            } else {
-              RESULTS.errors.XRLightProbe = probe;
-            }
-          } else {
-            RESULTS.support.XRLightEstimate_exists = false;
-            RESULTS.errors.XRLightEstimate_exists = 'requestLightProbe missing';
-          }
-
-          // ---- Plane Detection ----
-          try {
-            const planes = frame.worldInformation?.detectedPlanes;
-            RESULTS.support.XRPlane_set_available = !!planes;
-            RESULTS.values.XRPlane_count = planes ? planes.size : null;
-            const firstPlane = planes && planes.values().next().value;
-            if (firstPlane) {
-              RESULTS.values.XRPlane_lastChangedTime = firstPlane.lastChangedTime ?? null;
-              RESULTS.values.XRPlane_planeSpace_exists = !!firstPlane.planeSpace;
-              RESULTS.values.XRPlane_polygon_len = Array.isArray(firstPlane.polygon) ? firstPlane.polygon.length : null;
-            }
-          } catch (e) {
-            RESULTS.errors.XRPlane = String(e);
-          }
-
-          // ---- Hands / Joints ----
-          try {
-            const inputSources = session.inputSources || [];
-            const handSource = Array.from(inputSources).find(s => s.hand);
-            if (handSource?.hand) {
-              const hand = handSource.hand;
-              RESULTS.support.XRHand = true;
-              RESULTS.values.XRHand_size = hand.size ?? null;
-              const anyJoint = hand.values().next().value;
-              if (anyJoint) {
-                RESULTS.values.XRJointSpace_jointName = anyJoint.jointName ?? null;
-              }
-            } else {
-              RESULTS.support.XRHand = false;
-            }
-          } catch (e) {
-            RESULTS.errors.XRHand = String(e);
-          }
-
-          // ---- XRGPUBinding.getViewSubImage (WebGPU Layers) ----
-          try {
-            if ('XRGPUBinding' in window && navigator.gpu) {
-              const adapter = await navigator.gpu.requestAdapter();
-              const device = await adapter?.requestDevice();
-              if (device) {
-                const gpuBinding = new XRGPUBinding(session, device);
-                const layer = gpuBinding.createProjectionLayer?.({ alpha: 'premultiplied' });
-                RESULTS.support.XRGPUBinding_exists = !!gpuBinding;
-                if (layer && pose?.views?.length) {
-                  const vsi = gpuBinding.getViewSubImage?.(layer, pose.views[0]);
-                  RESULTS.support.XRGPUBinding_getViewSubImage = !!vsi;
-                } else {
-                  RESULTS.support.XRGPUBinding_getViewSubImage = false;
-                  RESULTS.errors.XRGPUBinding_getViewSubImage = 'layer or views unavailable';
-                }
-              }
-            } else {
-              RESULTS.support.XRGPUBinding_getViewSubImage = false;
-              RESULTS.errors.XRGPUBinding_getViewSubImage = 'XRGPUBinding or WebGPU not available';
-            }
-          } catch (e) {
-            RESULTS.errors.XRGPUBinding = String(e);
-          }
-
-          // Done with one frame; end session
-          session.end?.();
-          resolve();
-        } catch (e) {
-          RESULTS.errors.raf = String(e);
-          session.end?.();
-          resolve();
+    // One frame only
+    const frameHandle = sess.requestAnimationFrame(async (t,frame)=>{
+      try{
+        const pose = frame.getViewerPose(refSpace);
+        res.support.viewerPose = !!pose;
+        if(pose?.views?.length){
+          const view = pose.views[0];
+          const vp = layer.getViewport(view);
+          res.values.viewport = vp ? {x:vp.x,y:vp.y,w:vp.width,h:vp.height}:null;
+          res.values.eye = view.eye;
         }
-      });
+
+        // Depth Info
+        try{
+          const depth = frame.getDepthInformation?.(pose?.views?.[0]);
+          if(depth){
+            res.values.depth = {
+              w:depth.width,h:depth.height,
+              raw1: depth.rawValueToMeters?.(1)??null
+            };
+          }
+        }catch(e){ res.errors.depth=String(e); }
+
+        // Anchor test
+        if(frame.createAnchor && refSpace){
+          const a = await safe(()=>frame.createAnchor(new XRRigidTransform(),refSpace));
+          res.support.anchor = a.ok;
+          if(a.ok) await safe(()=>a.value.delete());
+        }
+
+        await sess.end().catch(()=>{});
+        cancelAnimationFrame(frameHandle);
+        setStatus("Finished.","ok");
+        log(res);
+      }catch(e){
+        res.errors.frame=String(e);
+        await sess.end().catch(()=>{});
+        cancelAnimationFrame(frameHandle);
+        setStatus("Finished (error).","warn");
+        log(res);
+      }
     });
-
-    // Constructors usable without session (good fingerprint probes)
-    RESULTS.values.constructor_only = constructorOnlyTests();
-
-    setStatus('Finished.', 'ok');
-    log(RESULTS);
   }
 
-  function constructorOnlyTests() {
-    const v = {};
-    // XRRay
-    try {
-      if ('XRRay' in window) {
-        const r = new XRRay();
-        v.XRRay_origin = r.origin ? [r.origin.x, r.origin.y, r.origin.z, r.origin.w].filter(x=>x!==undefined) : null;
-        v.XRRay_direction = r.direction ? [r.direction.x, r.direction.y, r.direction.z, r.direction.w].filter(x=>x!==undefined) : null;
-        v.XRRay_matrix = r.matrix ? Array.from(r.matrix) : null;
-      } else {
-        v.XRRay_missing = true;
-      }
-    } catch (e) {
-      v.XRRay_error = String(e);
-    }
-    // XRRigidTransform
-    try {
-      if ('XRRigidTransform' in window) {
-        const rt = new XRRigidTransform();
-        v.XRRigidTransform_position = rt.position ? [rt.position.x, rt.position.y, rt.position.z, rt.position.w].filter(x=>x!==undefined) : null;
-        v.XRRigidTransform_orientation = rt.orientation ? [rt.orientation.x, rt.orientation.y, rt.orientation.z, rt.orientation.w].filter(x=>x!==undefined) : null;
-        v.XRRigidTransform_inverse_exists = !!rt.inverse;
-      } else {
-        v.XRRigidTransform_missing = true;
-      }
-    } catch (e) {
-      v.XRRigidTransform_error = String(e);
-    }
-    return v;
-  }
-
-  document.getElementById('run').onclick = run;
-  document.getElementById('copy').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(out.textContent);
-      setStatus('Copied JSON to clipboard.', 'ok');
-    } catch {
-      setStatus('Copy failed.', 'err');
-    }
+  document.getElementById("run").onclick = run;
+  document.getElementById("copy").onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(out.textContent);
+      setStatus("Copied JSON","ok"); }catch{ setStatus("Copy failed","warn"); }
   };
 })();
 </script>
