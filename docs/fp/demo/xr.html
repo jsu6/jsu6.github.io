@@ -1,266 +1,417 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>WebXR Fingerprinting PoC – Advanced</title>
+<title>WebXR Fingerprinting PoC (inline session)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  body { font-family: system-ui, sans-serif; padding: 20px; max-width: 900px; margin: auto; }
-  button { padding: 10px 16px; margin-right: 8px; }
-  #status { margin-left: 8px; }
-  table { width:100%; border-collapse: collapse; margin-top:20px; }
-  th, td { border:1px solid #ccc; padding:6px 10px; text-align:left; }
-  th { background:#eee; }
-  .ok { color:#0a7f2e; }
-  .warn { color:#a15a00; }
-  .err { color:#b00020; }
-  pre { background:#f6f7f9; padding:12px; border:1px solid #ddd; overflow:auto; margin-top:20px; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 20px; }
+  button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; cursor: pointer; }
+  #status { margin: 8px 0 14px; }
+  pre { background:#0b0b0b; color:#d7eaff; padding:12px; border-radius:10px; overflow:auto; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  th { background: #f6f8fa; text-align: left; }
+  .ok { color: #0a8a0a; font-weight: 600; }
+  .no { color: #b00020; font-weight: 600; }
+  .warn { color: #b37400; font-weight: 600; }
 </style>
 
-<h1>WebXR Fingerprinting PoC – Advanced</h1>
-<p>This demo follows the engine of the <a href="https://immersive-web.github.io/webxr-samples/tests/">WebXR test-pages</a> and then additionally probes many APIs for fingerprintable values.</p>
-
-<button id="run">Run PoC</button>
-<button id="copy">Copy JSON</button><span id="status"></span>
-
-<div id="results"></div>
-<pre id="raw">Ready.</pre>
+<h1>WebXR Fingerprinting PoC</h1>
+<p>This PoC uses an <b>inline</b> XR session to query WebXR APIs and print potentially identifying signals. It won’t loop forever.</p>
+<button id="run">Run inline XR probe</button>
+<div id="status"></div>
+<div id="summary"></div>
+<table id="results">
+  <thead>
+    <tr>
+      <th>API</th><th>Supported?</th><th>Signal (value / shape / notes)</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+<h3>Raw fingerprint object</h3>
+<pre id="raw">[not collected yet]</pre>
+<h3>Hash (djb2 of JSON)</h3>
+<pre id="hash">—</pre>
 
 <script>
-  (async () => {
-    const statusEl = document.getElementById('status');
-    const resultsEl = document.getElementById('results');
-    const rawEl = document.getElementById('raw');
-    const setStatus = (text, cls='') => { statusEl.textContent = text; statusEl.className = cls; };
-    const safeCall = fn => {
+const $ = sel => document.querySelector(sel);
+const tbody = $('#results tbody');
+const statusEl = $('#status');
+const rawEl = $('#raw');
+const hashEl = $('#hash');
+const runBtn = $('#run');
+
+function djb2(str) {
+  let h = 5381 >>> 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return ('00000000' + h.toString(16)).slice(-8);
+}
+
+function row(name, supported, value) {
+  const tr = document.createElement('tr');
+  const tdA = document.createElement('td'); tdA.textContent = name;
+  const tdB = document.createElement('td'); tdB.textContent = supported ? 'yes' : 'no';
+  tdB.className = supported ? 'ok' : 'no';
+  const tdC = document.createElement('td'); tdC.textContent = value;
+  tr.append(tdA, tdB, tdC); tbody.appendChild(tr);
+}
+
+function setStatus(msg, kind='') {
+  statusEl.textContent = msg;
+  statusEl.className = kind || '';
+}
+
+async function main() {
+  runBtn.disabled = true;
+  tbody.innerHTML = '';
+  rawEl.textContent = '[collecting…]';
+  hashEl.textContent = '—';
+
+  if (!('xr' in navigator)) {
+    setStatus('navigator.xr is unavailable in this browser.', 'no');
+    row('navigator.xr', false, 'no WebXR implementation'); return;
+  }
+  row('navigator.xr', true, 'present');
+
+  // Inline session is widely available and doesn’t require a headset.
+  const inlineSupported = await navigator.xr.isSessionSupported?.('inline').catch(()=>false);
+  row('isSessionSupported("inline")', !!inlineSupported, String(!!inlineSupported));
+
+  if (!inlineSupported) {
+    setStatus('Inline XR session not supported. Unable to probe most APIs.', 'warn');
+    finalize({});
+    return;
+  }
+
+  // WebGL context required for XRWebGLLayer path.
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl', { alpha: false, antialias: false });
+  row('WebGLRenderingContext', !!gl, gl ? 'ok' : 'failed to create context');
+
+  const optionalFeatures = [
+    // Some are experimental; we request optimistically and detect at runtime.
+    'anchors',           // XRAnchor / XRFrame.createAnchor
+    'hit-test',          // XRHitTestSource
+    'hand-tracking',     // XRHand
+    'plane-detection',   // XRPlane
+    'light-estimation',  // XRLightEstimate
+    'depth-sensing',     // XRDepthInformation (CPU/GPU variants)
+    'dom-overlay',       // not fingerprinting here; useful if needed
+    'local-floor', 'bounded-floor', 'viewer' // ref spaces
+  ];
+
+  let session;
+  try {
+    session = await navigator.xr.requestSession('inline', { optionalFeatures });
+  } catch (e) {
+    setStatus('Failed to start inline session: ' + e, 'no');
+    row('requestSession("inline")', false, String(e));
+    finalize({});
+    return;
+  }
+  row('requestSession("inline")', true, 'started');
+  setStatus('Inline XR session started. Probing…', 'ok');
+
+  // Hook WebGL layer if available
+  if (window.XRWebGLLayer && gl) {
+    try {
+      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+      row('XRSession.updateRenderState', true, 'baseLayer attached');
+    } catch (e) {
+      row('XRSession.updateRenderState', true, 'call failed: ' + e);
+    }
+  } else {
+    row('XRSession.updateRenderState', false, 'XRWebGLLayer or GL missing');
+  }
+
+  // Reference spaces
+  const refSpaces = {};
+  for (const kind of ['viewer', 'local', 'local-floor', 'bounded-floor']) {
+    try {
+      refSpaces[kind] = await session.requestReferenceSpace(kind);
+      row(`requestReferenceSpace("${kind}")`, !!refSpaces[kind], 'ok');
+    } catch (e) {
+      row(`requestReferenceSpace("${kind}")`, false, String(e));
+    }
+  }
+  const refSpace = refSpaces['local'] || refSpaces['viewer'];
+
+  // Per-frame probe (we stop after 2 frames)
+  const fp = {
+    // We’ll fill these as we learn them:
+    'XRAnchor.Delete': 'unavailable',
+    'XRDepthInformation.height': 'unavailable',
+    'XRDepthInformation.normDepthBufferFromNormView': 'unavailable',
+    'XRDepthInformation.rawValueToMeters': 'unavailable',
+    'XRDepthInformation.width': 'unavailable',
+    'XRFrame.createAnchor': 'unavailable',
+    'XRGPUBinding.getViewSubImage': 'unavailable',
+    'XRHand.size': 'unavailable',
+    'XRHitTestSource.cancel': 'unavailable',
+    'XRImageTrackingResult.imageSpace': 'unavailable',
+    'XRImageTrackingResult.index': 'unavailable',
+    'XRImageTrackingResult.measuredWidthInMeters': 'unavailable',
+    'XRImageTrackingResult.trackingState': 'unavailable',
+    'XRJointSpace.jointName': 'unavailable',
+    'XRLightEstimate.primaryLightDirection': 'unavailable',
+    'XRLightEstimate.primaryLightIntensity': 'unavailable',
+    'XRLightEstimate.sphericalHarmonicsCoefficients': 'unavailable',
+    'XRPlane.lastChangedTime': 'unavailable',
+    'XRPlane.planeSpace': 'unavailable',
+    'XRPlane.polygon': 'unavailable',
+    'XRRay.direction': 'unavailable',
+    'XRRay.matrix': 'unavailable',
+    'XRRay.origin': 'unavailable',
+    'XRRigidTransform.inverse': 'unavailable',
+    'XRRigidTransform.orientation': 'unavailable',
+    'XRRigidTransform.position': 'unavailable',
+    'XRSession.updateRenderState': !!session.updateRenderState,
+    'XRView.eye': 'unavailable',
+    'XRView.refSpaceFromView': 'unavailable',
+    'XRViewerPose.views': 'unavailable',
+    'XRWebGLLayer.getViewport': 'unavailable'
+  };
+
+  // Non-session classes we can sample immediately:
+  try {
+    const ray = new XRRay();
+    fp['XRRay.origin'] = toVec3(ray.origin);
+    fp['XRRay.direction'] = toVec3(ray.direction);
+    fp['XRRay.matrix'] = Array.from(ray.matrix);
+    row('XRRay.origin/direction/matrix', true, `origin=${fmtVec(ray.origin)} dir=${fmtVec(ray.direction)} [matrix 16]`);
+  } catch {
+    row('XRRay (constructor)', false, 'not available');
+  }
+  try {
+    const t = new XRRigidTransform();
+    fp['XRRigidTransform.position'] = toVec3(t.position);
+    fp['XRRigidTransform.orientation'] = toQuat(t.orientation);
+    fp['XRRigidTransform.inverse'] = !!t.inverse;
+    row('XRRigidTransform.*', true, `pos=${fmtVec(t.position)} ori=${fmtQuat(t.orientation)} inverse=${!!t.inverse}`);
+  } catch {
+    row('XRRigidTransform', false, 'not available');
+  }
+
+  // Optional: WebGPU XRGPUBinding check (don’t fail if absent)
+  if ('XRGPUBinding' in window) {
+    fp['XRGPUBinding.getViewSubImage'] = typeof XRGPUBinding.prototype?.getViewSubImage === 'function';
+    row('XRGPUBinding.getViewSubImage', !!fp['XRGPUBinding.getViewSubImage'], String(fp['XRGPUBinding.getViewSubImage']));
+  } else {
+    row('XRGPUBinding.getViewSubImage', false, 'XRGPUBinding not present');
+  }
+
+  let frames = 0;
+  const done = new Promise(resolve => {
+    session.requestAnimationFrame(function onFrame(t, frame) {
+      frames++;
       try {
-        const v = fn();
-        if (v && typeof v.then === 'function') {
-          return v.then(res => ({ ok: true, value: res }))
-                  .catch(e => ({ ok: false, error: String(e), name: e?.name }));
-        }
-        return { ok: true, value: v };
-      } catch(e) {
-        return { ok: false, error: String(e), name: e?.name };
-      }
-    };
+        if (!refSpace) throw new Error('no reference space');
+        const pose = frame.getViewerPose?.('local') || frame.getViewerPose?.(refSpace);
+        if (pose) {
+          fp['XRViewerPose.views'] = pose.views.length;
+          row('XRViewerPose.views', true, String(pose.views.length));
+          const baseLayer = session.renderState?.baseLayer;
 
-    async function runPoC() {
-      setStatus('Running…','warn');
-      const data = {
-        env: {
-          userAgent: navigator.userAgent,
-          platform: navigator.platform,
-          secureContext: window.isSecureContext
-        },
-        fingerprint: [],
-        raw: {}
-      };
-
-      // Basic presence checks
-      if (!navigator.xr) {
-        data.fingerprint.push({ api:'navigator.xr', status:'missing', value:null, impact:'high' });
-        finalize(data);
-        return;
-      } else {
-        data.fingerprint.push({ api:'navigator.xr', status:'ok', value:null, impact:'high' });
-      }
-
-      const inlineSupport = await navigator.xr.isSessionSupported('inline').catch(() => false);
-      data.fingerprint.push({ api:'XRSession.inlineSupport', status:inlineSupport ? 'ok' : 'fail', value:inlineSupport, impact:'high' });
-      if (!inlineSupport) {
-        finalize(data);
-        return;
-      }
-
-      const sessionReq = await safeCall(() =>
-        navigator.xr.requestSession('inline', {
-          optionalFeatures: ['anchors','hit-test','hand-tracking','light-estimation','plane-detection','depth-sensing','image-tracking']
-        })
-      );
-      if (!sessionReq.ok) {
-        data.fingerprint.push({ api:'requestSession(inline)', status:'error', value: sessionReq.error, impact:'high' });
-        finalize(data);
-        return;
-      }
-      const session = sessionReq.value;
-      data.raw.session = session;
-
-      // Reference space
-      const refReq = await safeCall(() => session.requestReferenceSpace('viewer'));
-      const refSpace = refReq.ok ? refReq.value : null;
-      data.fingerprint.push({ api:'requestReferenceSpace(viewer)', status: refReq.ok ? 'ok' : 'fail', value: refReq.ok ? refSpace.constructor.name : refReq.error, impact:'medium' });
-
-      // WebGL & XRWebGLLayer setup
-      const canvas = document.createElement('canvas');
-      const gl = canvas.getContext('webgl', { xrCompatible: true }) || canvas.getContext('experimental-webgl');
-      if (!gl) {
-        data.fingerprint.push({ api:'WebGL context (xrCompatible)', status:'fail', value:null, impact:'high' });
-      } else {
-        await gl.makeXRCompatible?.();
-        const layer = new XRWebGLLayer(session, gl);
-        await safeCall(() => session.updateRenderState({ baseLayer: layer }));
-        data.raw.layer = layer;
-
-        data.fingerprint.push({ api:'XRWebGLLayer.getViewport', status:'pending', value:null, impact:'high' });
-
-        // One frame, then end
-        session.requestAnimationFrame(async (time, frame) => {
-          try {
-            const pose = frame.getViewerPose(refSpace);
-            if (pose && pose.views && pose.views.length > 0) {
-              const view = pose.views[0];
-              const vp = layer.getViewport(view);
-              data.fingerprint.push({ api:'XRWebGLLayer.getViewport', status:'ok', value:`${vp.width}×${vp.height}`, impact:'high' });
-              data.fingerprint.push({ api:'XRView.eye', status:'ok', value:view.eye, impact:'medium' });
-            } else {
-              data.fingerprint.push({ api:'getViewerPose', status:'fail', value:null, impact:'high' });
+          // XRView.eye + XRWebGLLayer.getViewport
+          const eyes = [];
+          for (const v of pose.views) {
+            eyes.push(v.eye || 'unknown');
+            if (baseLayer && baseLayer.getViewport) {
+              const vp = baseLayer.getViewport(v);
+              if (vp) fp['XRWebGLLayer.getViewport'] = [vp.x, vp.y, vp.width, vp.height];
             }
-
-            // Depth info
-            try {
-              const d = frame.getDepthInformation?.(pose?.views[0]);
-              if (d) {
-                data.fingerprint.push({ api:'XRDepthInformation.width', status:'ok', value:d.width, impact:'high' });
-                data.fingerprint.push({ api:'XRDepthInformation.height', status:'ok', value:d.height, impact:'high' });
-                data.fingerprint.push({ api:'XRDepthInformation.rawValueToMeters', status: typeof d.rawValueToMeters === 'function' ? 'ok' : 'missing', value:null, impact:'high' });
-                data.fingerprint.push({ api:'XRDepthInformation.normDepthBufferFromNormView', status: typeof d.normDepthBufferFromNormView === 'function' ? 'ok' : 'missing', value:null, impact:'high' });
-              } else {
-                data.fingerprint.push({ api:'XRDepthInformation', status:'missing', value:null, impact:'high' });
-              }
-            } catch(e) {
-              data.fingerprint.push({ api:'XRDepthInformation', status:'error', value:String(e), impact:'high' });
-            }
-
-            // Anchor
-            if (frame.createAnchor && refSpace) {
-              const anchorReq = await safeCall(() => frame.createAnchor(new XRRigidTransform(), refSpace));
-              data.fingerprint.push({ api:'XRFrame.createAnchor', status:anchorReq.ok ? 'ok' : 'fail', value: anchorReq.ok ? anchorReq.value.constructor.name : anchorReq.error, impact:'medium' });
-              if (anchorReq.ok) {
-                await safeCall(() => anchorReq.value.delete());
-                data.fingerprint.push({ api:'XRAnchor.delete', status:'ok', value:null, impact:'medium' });
-              }
-            } else {
-              data.fingerprint.push({ api:'XRFrame.createAnchor', status:'missing', value:null, impact:'medium' });
-            }
-
-            // Hit Test Source
-            if (session.requestHitTestSource) {
-              const hReq = await safeCall(() => session.requestHitTestSource({ space: refSpace }));
-              data.fingerprint.push({ api:'XRHitTestSource.request', status:hReq.ok ? 'ok' : 'fail', value:hReq.ok ? hReq.value.constructor.name : hReq.error, impact:'medium' });
-              if (hReq.ok) {
-                const cancelReq = await safeCall(() => hReq.value.cancel());
-                data.fingerprint.push({ api:'XRHitTestSource.cancel', status:cancelReq.ok ? 'ok' : 'fail', value: cancelReq.ok ? null : cancelReq.error, impact:'medium' });
-              }
-            } else {
-              data.fingerprint.push({ api:'XRHitTestSource.cancel', status:'missing', value:null, impact:'medium' });
-            }
-
-            // Light Estimate
-            if (session.requestLightProbe) {
-              const lpReq = await safeCall(() => session.requestLightProbe());
-              data.fingerprint.push({ api:'requestLightProbe', status: lpReq.ok ? 'ok' : 'fail', value: lpReq.ok ? lpReq.value.constructor.name : lpReq.error, impact:'medium' });
-              if (lpReq.ok) {
-                const le = frame.getLightEstimate?.(lpReq.value);
-                if (le) {
-                  data.fingerprint.push({ api:'XRLightEstimate.primaryLightIntensity', status:'ok', value: Array.from(le.primaryLightIntensity || []), impact:'medium' });
-                  data.fingerprint.push({ api:'XRLightEstimate.primaryLightDirection', status:'ok', value: Array.from(le.primaryLightDirection || []), impact:'medium' });
-                  data.fingerprint.push({ api:'XRLightEstimate.sphericalHarmonicsCoefficients', status:'ok', value: Array.from(le.sphericalHarmonicsCoefficients || []), impact:'medium' });
-                } else {
-                  data.fingerprint.push({ api:'XRLightEstimate', status:'missing', value:null, impact:'medium' });
-                }
-              }
-            } else {
-              data.fingerprint.push({ api:'XRLightEstimate', status:'missing', value:null, impact:'medium' });
-            }
-
-            // Plane detection
-            try {
-              const planes = frame.worldInformation?.detectedPlanes;
-              if (planes) {
-                const p = planes.values().next().value;
-                data.fingerprint.push({ api:'XRPlane.lastChangedTime', status:'ok', value:p.lastChangedTime, impact:'low' });
-                data.fingerprint.push({ api:'XRPlane.polygon.length', status:'ok', value: Array.isArray(p.polygon) ? p.polygon.length : null, impact:'low' });
-                data.fingerprint.push({ api:'XRPlane.planeSpace', status:'ok', value: p.planeSpace.constructor.name, impact:'low' });
-              } else {
-                data.fingerprint.push({ api:'XRPlane', status:'missing', value:null, impact:'medium' });
-              }
-            } catch(e) {
-              data.fingerprint.push({ api:'XRPlane', status:'error', value:String(e), impact:'medium' });
-            }
-
-            // Joint space / Hand
-            try {
-              const inputSources = session.inputSources || [];
-              const handSource = inputSources.find(s => s.hand);
-              if (handSource && handSource.hand) {
-                data.fingerprint.push({ api:'XRHand.size', status:'ok', value: handSource.hand.size, impact:'low' });
-                const j = handSource.hand.values().next().value;
-                if (j) {
-                  data.fingerprint.push({ api:'XRJointSpace.jointName', status:'ok', value: j.jointName, impact:'low' });
-                }
-              } else {
-                data.fingerprint.push({ api:'XRHand', status:'none', value:null, impact:'low' });
-              }
-            } catch(e) {
-              data.fingerprint.push({ api:'XRHand', status:'error', value:String(e), impact:'low' });
-            }
-
-            // XRRay / XRRigidTransform constructor only
-            if ('XRRay' in window) {
-              const r = new XRRay();
-              data.fingerprint.push({ api:'XRRay.origin', status:'ok', value:[r.origin.x, r.origin.y, r.origin.z, r.origin.w], impact:'low' });
-              data.fingerprint.push({ api:'XRRay.direction', status:'ok', value:[r.direction.x, r.direction.y, r.direction.z, r.direction.w], impact:'low' });
-            } else {
-              data.fingerprint.push({ api:'XRRay', status:'missing', value:null, impact:'low' });
-            }
-            if ('XRRigidTransform' in window) {
-              const t = new XRRigidTransform();
-              data.fingerprint.push({ api:'XRRigidTransform.position', status:'ok', value:[t.position.x, t.position.y, t.position.z, t.position.w], impact:'low' });
-              data.fingerprint.push({ api:'XRRigidTransform.orientation', status:'ok', value:[t.orientation.x, t.orientation.y, t.orientation.z, t.orientation.w], impact:'low' });
-              data.fingerprint.push({ api:'XRRigidTransform.inverse', status:t.inverse ? 'ok' : 'missing', value:null, impact:'low' });
-            } else {
-              data.fingerprint.push({ api:'XRRigidTransform', status:'missing', value:null, impact:'low' });
-            }
-
-            // End the session
-            await session.end();
-            setStatus('Finished','ok');
-            finalize(data);
-          } catch(e) {
-            data.fingerprint.push({ api:'frame', status:'error', value:String(e), impact:'high' });
-            await session.end();
-            setStatus('Finished (error)','err');
-            finalize(data);
+            // Nonstandard refSpaceFromView (feature-detect)
+            fp['XRView.refSpaceFromView'] = fp['XRView.refSpaceFromView'] || (('refSpaceFromView' in v) ? 'present' : 'absent');
           }
-        });
+          fp['XRView.eye'] = eyes;
+          row('XRView.eye', true, eyes.join(', '));
+          row('XRWebGLLayer.getViewport', !!fp['XRWebGLLayer.getViewport'], JSON.stringify(fp['XRWebGLLayer.getViewport'] || 'n/a'));
+
+          // Light estimation
+          if (frame.getLightEstimate) {
+            const le = frame.getLightEstimate(refSpace);
+            if (le) {
+              if ('primaryLightDirection' in le) {
+                fp['XRLightEstimate.primaryLightDirection'] = toVec3(le.primaryLightDirection);
+                row('XRLightEstimate.primaryLightDirection', true, fmtVec(le.primaryLightDirection));
+              }
+              if ('primaryLightIntensity' in le) {
+                fp['XRLightEstimate.primaryLightIntensity'] = Array.from(le.primaryLightIntensity || []);
+                row('XRLightEstimate.primaryLightIntensity', true, `[${(le.primaryLightIntensity||[]).length}]`);
+              }
+              if ('sphericalHarmonicsCoefficients' in le) {
+                const sh = le.sphericalHarmonicsCoefficients;
+                fp['XRLightEstimate.sphericalHarmonicsCoefficients'] = sh ? Array.from(sh) : null;
+                row('XRLightEstimate.sphericalHarmonicsCoefficients', !!sh, sh ? `${sh.length} coeffs` : 'null');
+              }
+            } else {
+              row('XRLightEstimate.*', false, 'no estimate this frame');
+            }
+          } else {
+            row('XRLightEstimate.*', false, 'getLightEstimate not present');
+          }
+
+          // Depth
+          if (frame.getDepthInformation) {
+            const di = frame.getDepthInformation(pose.views[0]);
+            if (di) {
+              fp['XRDepthInformation.width'] = di.width ?? null;
+              fp['XRDepthInformation.height'] = di.height ?? null;
+              row('XRDepthInformation.width/height', true, `${di.width}×${di.height}`);
+              // Probe legacy/impl-specific names if present:
+              fp['XRDepthInformation.normDepthBufferFromNormView'] = typeof di.normDepthBufferFromNormView === 'function';
+              fp['XRDepthInformation.rawValueToMeters'] = typeof di.rawValueToMeters === 'function';
+              row('XRDepthInformation.normDepthBufferFromNormView', !!di?.normDepthBufferFromNormView, String(!!di?.normDepthBufferFromNormView));
+              row('XRDepthInformation.rawValueToMeters', !!di?.rawValueToMeters, String(!!di?.rawValueToMeters));
+            } else {
+              row('XRDepthInformation', false, 'no depth for this view/frame');
+            }
+          } else {
+            row('XRDepthInformation', false, 'getDepthInformation not present');
+          }
+
+          // Planes
+          const wi = frame.worldInformation || {};
+          if (wi.detectedPlanes && wi.detectedPlanes.size) {
+            const first = wi.detectedPlanes.values().next().value;
+            if (first) {
+              fp['XRPlane.lastChangedTime'] = first.lastChangedTime ?? null;
+              fp['XRPlane.planeSpace'] = !!first.planeSpace;
+              fp['XRPlane.polygon'] = (first.polygon && first.polygon.length) || 0;
+              row('XRPlane.lastChangedTime/planeSpace/polygon', true,
+                  `t=${first.lastChangedTime} space=${!!first.planeSpace} poly=${(first.polygon||[]).length}`);
+            }
+          } else {
+            row('XRPlane.*', false, 'no detected planes');
+          }
+
+          // Anchors
+          if (frame.createAnchor && refSpace) {
+            try {
+              const anchor = awaitMaybe(frame.createAnchor(new XRRigidTransform(), refSpace));
+              fp['XRFrame.createAnchor'] = !!anchor;
+              row('XRFrame.createAnchor', !!anchor, anchor ? 'ok' : 'failed');
+              if (anchor?.delete) {
+                fp['XRAnchor.Delete'] = true;
+                try { awaitMaybe(anchor.delete()); } catch {}
+                row('XRAnchor.delete', true, 'supported');
+              } else {
+                row('XRAnchor.delete', false, 'method absent');
+              }
+            } catch (e) {
+              row('XRFrame.createAnchor', true, 'threw: ' + e);
+            }
+          } else {
+            row('XRFrame.createAnchor', false, 'anchors not available');
+          }
+
+          // Hit-test
+          if (session.requestHitTestSource) {
+            try {
+              const src = awaitMaybe(session.requestHitTestSource({ space: refSpace }));
+              if (src) {
+                fp['XRHitTestSource.cancel'] = typeof src.cancel === 'function';
+                row('XRHitTestSource.cancel', !!fp['XRHitTestSource.cancel'], String(!!fp['XRHitTestSource.cancel']));
+                try { src.cancel?.(); } catch {}
+              } else {
+                row('XRHitTestSource.cancel', false, 'could not create source');
+              }
+            } catch (e) {
+              row('XRHitTestSource.cancel', false, 'requestHitTestSource threw: ' + e);
+            }
+          } else {
+            row('XRHitTestSource.cancel', false, 'hit-test not available');
+          }
+
+          // Hand tracking
+          const handSrc = [...session.inputSources || []].find(s => s.hand);
+          if (handSrc?.hand) {
+            const h = handSrc.hand;
+            fp['XRHand.size'] = h.size ?? null;
+            row('XRHand.size', true, String(h.size));
+            // XRJointSpace.jointName (nonstandard on some impls)
+            const sampleJoint = h.values().next().value;
+            if (sampleJoint) {
+              fp['XRJointSpace.jointName'] = sampleJoint.jointName ?? null;
+              row('XRJointSpace.jointName', sampleJoint.jointName != null, String(sampleJoint.jointName ?? 'absent'));
+            } else {
+              row('XRJointSpace.jointName', false, 'no joints enumerated');
+            }
+          } else {
+            row('XRHand.size / XRJointSpace.jointName', false, 'no hand-tracking source');
+          }
+
+          // Image tracking
+          if (frame.getImageTrackingResults) {
+            const results = frame.getImageTrackingResults();
+            if (results && results.length) {
+              const r = results[0];
+              fp['XRImageTrackingResult.index'] = r.index ?? null;
+              fp['XRImageTrackingResult.trackingState'] = r.trackingState ?? null;
+              fp['XRImageTrackingResult.measuredWidthInMeters'] = r.measuredWidthInMeters ?? null;
+              fp['XRImageTrackingResult.imageSpace'] = !!r.imageSpace;
+              row('XRImageTrackingResult.*', true, `idx=${r.index} state=${r.trackingState} width=${r.measuredWidthInMeters} space=${!!r.imageSpace}`);
+            } else {
+              row('XRImageTrackingResult.*', false, 'no results');
+            }
+          } else {
+            row('XRImageTrackingResult.*', false, 'getImageTrackingResults not present');
+          }
+
+        } else {
+          row('getViewerPose', false, 'no pose (expected on some inline impls)');
+        }
+
+        // Stop after 2 frames to avoid long-running loops.
+        if (frames >= 2) {
+          session.end().catch(()=>{});
+          resolve();
+        } else {
+          session.requestAnimationFrame(onFrame);
+        }
+      } catch (e) {
+        row('frame probe error', true, String(e));
+        session.end().catch(()=>{});
+        resolve();
       }
+    });
+  });
 
-    }
+  // Timeout hard-stop (e.g., if RAF never fires)
+  const timeout = new Promise(res => setTimeout(res, 1500));
+  await Promise.race([done, timeout]);
+  try { await session.end(); } catch {}
 
-    function finalize(data) {
-      // render table
-      const rows = data.fingerprint.map(item => {
-        return `<tr>
-          <td>${item.api}</td>
-          <td class="${item.status==='ok'?'ok':item.status==='error'?'err':'warn'}">${item.status}</td>
-          <td>${item.value!=null ? JSON.stringify(item.value) : ''}</td>
-          <td>${item.impact}</td>
-        </tr>`;
-      }).join('');
-      resultsEl.innerHTML = `<h3>Fingerprint Signals</h3>
-        <table>
-          <tr><th>API</th><th>Status</th><th>Value / Error</th><th>Impact</th></tr>
-          ${rows}
-        </table>`;
-      rawEl.textContent = JSON.stringify(data, null, 2);
-    }
+  finalize(fp);
+}
 
-    document.getElementById('run').onclick = runPoC;
-    document.getElementById('copy').onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(rawEl.textContent);
-        setStatus('Copied JSON','ok');
-      } catch {
-        setStatus('Copy failed','warn');
-      }
-    };
-  })();
+function toVec3(v) {
+  if (!v) return null;
+  return [Number(v.x?.toFixed?.(6) ?? v.x ?? 0),
+          Number(v.y?.toFixed?.(6) ?? v.y ?? 0),
+          Number(v.z?.toFixed?.(6) ?? v.z ?? 0)];
+}
+function toQuat(q) {
+  if (!q) return null;
+  return [Number(q.x?.toFixed?.(6) ?? q.x ?? 0),
+          Number(q.y?.toFixed?.(6) ?? q.y ?? 0),
+          Number(q.z?.toFixed?.(6) ?? q.z ?? 0),
+          Number(q.w?.toFixed?.(6) ?? q.w ?? 0)];
+}
+function fmtVec(v) { return v ? `(${[v.x,v.y,v.z].map(n=>Number(n).toFixed?.(3) ?? n).join(', ')})` : 'null'; }
+function fmtQuat(q){ return q ? `(${[q.x,q.y,q.z,q.w].map(n=>Number(n).toFixed?.(3) ?? n).join(', ')})` : 'null'; }
+function awaitMaybe(p) { return (p && typeof p.then === 'function') ? p : Promise.resolve(p); }
+
+function finalize(fp) {
+  // Fill table entries for anything not hit earlier (to be explicit)
+  for (const [k,v] of Object.entries(fp)) {
+    // The rows have already been printed as we probed; skip here.
+  }
+  const json = JSON.stringify(fp, null, 2);
+  rawEl.textContent = json;
+  hashEl.textContent = djb2(json);
+  setStatus('Finished. See results below.');
+}
+
+runBtn.addEventListener('click', main);
 </script>
