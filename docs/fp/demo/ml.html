@@ -1,65 +1,376 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>WebNN Spec-Example</title>
+  <meta charset="UTF-8" />
+  <title>WebNN / MLGraphBuilder Feature Demo</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      background: #f5f5f5;
+    }
+    h1 {
+      margin-bottom: 0.25rem;
+    }
+    #status {
+      margin-bottom: 1rem;
+      font-weight: 500;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.4rem 0.6rem;
+      font-size: 0.9rem;
+    }
+    th {
+      background: #eee;
+      text-align: left;
+    }
+    tr:nth-child(even) {
+      background: #fafafa;
+    }
+    .ok {
+      color: green;
+      font-weight: 600;
+    }
+    .fail {
+      color: #b00020;
+      font-weight: 600;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .small {
+      font-size: 0.8rem;
+      color: #555;
+    }
+  </style>
 </head>
 <body>
-  <h1>WebNN Spec Example: C = 0.2*A + B</h1>
-  <button id="run">Run</button>
-  <pre id="output"></pre>
+  <h1>WebNN / MLGraphBuilder Feature Demo</h1>
+  <p class="small">
+    This page creates tiny WebNN graphs with various <code>MLGraphBuilder</code> operations and
+    reports whether they successfully build &amp; run, plus a sample numeric output.
+    Use it only for testing / compatibility, not for tracking or profiling users.
+  </p>
+  <div id="status">Initializing…</div>
+  <div class="small">User agent: <code id="ua"></code></div>
+  <br />
+  <table>
+    <thead>
+      <tr>
+        <th>Test</th>
+        <th>Result</th>
+        <th>Sample output (first few values)</th>
+        <th>Error (if any)</th>
+      </tr>
+    </thead>
+    <tbody id="results-body"></tbody>
+  </table>
 
-  <script>
-    const outputEl = document.getElementById('output');
-    document.getElementById('run').onclick = async () => {
-      outputEl.textContent = 'Running…';
+  <script type="module">
+    (async () => {
+      const statusEl = document.getElementById('status');
+      const uaEl = document.getElementById('ua');
+      const tbody = document.getElementById('results-body');
 
-      if (!navigator.ml) {
-        outputEl.textContent = 'navigator.ml not available — WebNN unsupported.';
+      uaEl.textContent = navigator.userAgent || 'N/A';
+
+      if (!('ml' in navigator) || typeof navigator.ml.createContext !== 'function') {
+        statusEl.textContent = 'navigator.ml / WebNN is not available in this browser.';
+        statusEl.classList.add('fail');
         return;
       }
 
+      statusEl.textContent = 'Creating ML context…';
+
+      let context, builder;
       try {
-        // Create context per spec §8.2
-        const context = await navigator.ml.createContext();
-
-        // Create builder per spec §7.1 & §8.9
-        const builder = new MLGraphBuilder(context);
-
-        // Descriptor as in spec example
-        const descriptor = { dataType: 'float32', shape: [2, 2] };
-
-        // Constant operand (0.2 fill) per spec example
-        const constantData = new Float32Array(4).fill(0.2);
-        const constant = builder.constant(descriptor, constantData);
-
-        // Inputs A and B
-        const A = builder.input('A', descriptor);
-        const B = builder.input('B', descriptor);
-
-        // Graph: C = add(mul(A, constant), B)
-        const mul = builder.mul(A, constant);
-        const C = builder.add(mul, B);
-
-        // Build graph per spec §8.9.4 / §8.4
-        const graph = await builder.build({ C: C });
-
-        // Prepare data for A and B
-        const Adata = new Float32Array([1.0, 2.0, 3.0, 4.0]);
-        const Bdata = new Float32Array([10.0, 20.0, 30.0, 40.0]);
-        const Cdata = new Float32Array(4);
-
-        // Execute graph (depending on implementation this may be compute or dispatch)
-        await context.compute(graph, { A: Adata, B: Bdata }, { C: Cdata });
-
-        // Display results
-        outputEl.textContent = 'A = [' + Array.from(Adata).join(', ') + ']\n' +
-                               'B = [' + Array.from(Bdata).join(', ') + ']\n' +
-                               'C = [' + Array.from(Cdata).join(', ') + ']';
-      } catch (err) {
-        outputEl.textContent = 'Error: ' + err;
+        context = await navigator.ml.createContext();
+        builder = new MLGraphBuilder(context);
+      } catch (e) {
+        statusEl.textContent = 'Failed to create ML context: ' + e;
+        statusEl.classList.add('fail');
+        return;
       }
-    };
+
+      statusEl.textContent = 'Running tests…';
+
+      // Common descriptors
+      const pointDesc = { dataType: 'float32', shape: [1] };
+      const tensorDesc = { dataType: 'float32', shape: [1, 2, 2, 2] }; // NCHW
+
+      // Helper: create a row in the result table
+      function addRow(name, ok, sample, error) {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td');
+        tdName.textContent = name;
+        tr.appendChild(tdName);
+
+        const tdResult = document.createElement('td');
+        tdResult.textContent = ok ? 'OK' : 'Failed';
+        tdResult.className = ok ? 'ok' : 'fail';
+        tr.appendChild(tdResult);
+
+        const tdSample = document.createElement('td');
+        tdSample.textContent = sample;
+        tr.appendChild(tdSample);
+
+        const tdError = document.createElement('td');
+        tdError.textContent = error || '';
+        tr.appendChild(tdError);
+
+        tbody.appendChild(tr);
+      }
+
+      // Helper: run a tiny graph and collect first few output values
+      async function runGraphWithSingleOutput(name, buildFn) {
+        try {
+          // Build graph: buildFn should return { outputOperand, inputOperands: {name: operand, desc} }
+          const { outputOperand, inputOperands } = buildFn(builder);
+
+          const graph = await builder.build({ output: outputOperand });
+
+          // Create tensors and fill them with deterministic data
+          const inputTensors = {};
+          for (const key of Object.keys(inputOperands)) {
+            const { operand, desc } = inputOperands[key];
+            const size = desc.shape.reduce((a, b) => a * b, 1);
+            const buffer = new Float32Array(size);
+            for (let i = 0; i < size; i++) {
+              buffer[i] = (i + 1) * 0.1; // 0.1, 0.2, 0.3, ...
+            }
+            const tensor = await context.createTensor({
+              dataType: desc.dataType,
+              shape: desc.shape,
+              writable: true
+            });
+            await context.writeTensor(tensor, buffer);
+            inputTensors[key] = { tensor, operandName: key };
+          }
+
+          const outputDesc = {
+            dataType: outputOperand.dataType,
+            shape: outputOperand.shape,
+            readable: true
+          };
+          const outputTensor = await context.createTensor(outputDesc);
+
+          const inputs = {};
+          for (const [key, value] of Object.entries(inputTensors)) {
+            inputs[key] = value.tensor;
+          }
+          const outputs = { output: outputTensor };
+
+          await context.dispatch(graph, inputs, outputs);
+
+          const outData = new Float32Array(await context.readTensor(outputTensor));
+          const sample = Array.from(outData.slice(0, 6)).map(v => v.toFixed(4)).join(', ');
+
+          addRow(name, true, sample, '');
+        } catch (err) {
+          addRow(name, false, '', String(err));
+        }
+      }
+
+      // Generic unary activation test: relu, tanh, sigmoid, etc.
+      function unaryActivationTest(opName) {
+        return async () => {
+          await runGraphWithSingleOutput(`MLGraphBuilder.${opName}['type']`, (builder) => {
+            const input = builder.input('type', tensorDesc);
+            const out = builder[opName](input);
+            return {
+              outputOperand: out,
+              inputOperands: { type: { operand: input, desc: tensorDesc } }
+            };
+          });
+        };
+      }
+
+      // Pooling tests need extra options
+      async function l2Pool2dTest() {
+        await runGraphWithSingleOutput('MLGraphBuilder.l2Pool2d[\'type\']', (builder) => {
+          const input = builder.input('type', tensorDesc);
+          const out = builder.l2Pool2d(input, {
+            windowDimensions: [2, 2],
+            strides: [1, 1],
+            padding: [0, 0, 0, 0],
+            layout: 'nchw'
+          });
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: input, desc: tensorDesc } }
+          };
+        });
+      }
+
+      async function maxPool2dTest() {
+        await runGraphWithSingleOutput('MLGraphBuilder.maxPool2d[\'type\']', (builder) => {
+          const input = builder.input('type', tensorDesc);
+          const out = builder.maxPool2d(input, {
+            windowDimensions: [2, 2],
+            strides: [1, 1],
+            padding: [0, 0, 0, 0],
+            layout: 'nchw'
+          });
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: input, desc: tensorDesc } }
+          };
+        });
+      }
+
+      async function averagePool2dTest() {
+        await runGraphWithSingleOutput('MLGraphBuilder.averagePool2d[\'type\']', (builder) => {
+          const input = builder.input('type', tensorDesc);
+          const out = builder.averagePool2d(input, {
+            windowDimensions: [2, 2],
+            strides: [1, 1],
+            padding: [0, 0, 0, 0],
+            layout: 'nchw'
+          });
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: input, desc: tensorDesc } }
+          };
+        });
+      }
+
+      // Simple linear test: y = xW + b
+      async function linearTest() {
+        await runGraphWithSingleOutput('MLGraphBuilder.linear[\'type\']', (builder) => {
+          const input = builder.input('type', { dataType: 'float32', shape: [1, 4] });
+          const weightDesc = { dataType: 'float32', shape: [4, 4] };
+          const biasDesc = { dataType: 'float32', shape: [4] };
+          const weightBuffer = new Float32Array(16).fill(0.5);
+          const biasBuffer = new Float32Array(4).fill(0.1);
+          const weights = builder.constant(weightDesc, weightBuffer);
+          const bias = builder.constant(biasDesc, biasBuffer);
+          const out = builder.linear(input, weights, { bias });
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: input, desc: { dataType: 'float32', shape: [1, 4] } } }
+          };
+        });
+      }
+
+      // LogicalNot on a float tensor will usually be an error; this still tests behavior
+      async function logicalNotTest() {
+        await runGraphWithSingleOutput('MLGraphBuilder.logicalNot[\'type\']', (builder) => {
+          const boolDesc = { dataType: 'int32', shape: [1, 4] }; // using int32 as a stand-in for bool in some implementations
+          const input = builder.input('type', boolDesc);
+          const out = builder.logicalNot(input);
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: input, desc: boolDesc } }
+          };
+        });
+      }
+
+      async function clampTest() {
+        await runGraphWithSingleOutput('MLGraphBuilder.clamp[\'type\']', (builder) => {
+          const input = builder.input('type', pointDesc);
+          const out = builder.clamp(input, { minValue: -0.25, maxValue: 0.25 });
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: input, desc: pointDesc } }
+          };
+        });
+      }
+
+      async function comparisonTest(name, opName) {
+        await runGraphWithSingleOutput(`MLGraphBuilder.${opName}['type']`, (builder) => {
+          const desc = { dataType: 'float32', shape: [4] };
+          const a = builder.input('type', desc);
+          const bConst = builder.constant(desc, new Float32Array(4).fill(0.3));
+          const out = builder[opName](a, bConst);
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: a, desc } }
+          };
+        });
+      }
+
+      async function argMinMaxTest(opName) {
+        await runGraphWithSingleOutput(`MLGraphBuilder.${opName}['type']`, (builder) => {
+          const desc = { dataType: 'float32', shape: [1, 4] };
+          const input = builder.input('type', desc);
+          const out = builder[opName](input, { axis: 1 });
+          return {
+            outputOperand: out,
+            inputOperands: { type: { operand: input, desc } }
+          };
+        });
+      }
+
+      async function inputPointTest() {
+        await runGraphWithSingleOutput("MLGraphBuilder.input['point']", (builder) => {
+          const input = builder.input('point', pointDesc);
+          const c = builder.constant(pointDesc, new Float32Array([0.2]));
+          const out = builder.add(input, c);
+          return {
+            outputOperand: out,
+            inputOperands: { point: { operand: input, desc: pointDesc } }
+          };
+        });
+      }
+
+      async function constantPointTest() {
+        await runGraphWithSingleOutput("MLGraphBuilder.constant['point']", (builder) => {
+          const dummy = builder.input('point', pointDesc);
+          const c = builder.constant(pointDesc, new Float32Array([0.5]));
+          const out = builder.add(dummy, c);
+          return {
+            outputOperand: out,
+            inputOperands: { point: { operand: dummy, desc: pointDesc } }
+          };
+        });
+      }
+
+      // Queue of tests based on your list
+      const tests = [
+        inputPointTest,
+        constantPointTest,
+        linearTest,
+        l2Pool2dTest,
+        logicalNotTest,
+        clampTest,
+        maxPool2dTest,
+        unaryActivationTest('hardSwish'),
+        unaryActivationTest('leakyRelu'),
+        unaryActivationTest('hardSigmoid'),
+        unaryActivationTest('elu'),
+        argMinMaxTest.bind(null, 'argMax'),
+        averagePool2dTest,
+        unaryActivationTest('tanh'),
+        comparisonTest.bind(null, 'greaterOrEqual', 'greaterOrEqual'),
+        unaryActivationTest('relu'),
+        unaryActivationTest('softplus'),
+        argMinMaxTest.bind(null, 'argMin'),
+        comparisonTest.bind(null, 'lesserOrEqual', 'lesserOrEqual'),
+        unaryActivationTest('gelu'),
+        unaryActivationTest('softsign'),
+        unaryActivationTest('sigmoid')
+      ];
+
+      // Run sequentially so the output table is stable and easy to read
+      for (const t of tests) {
+        try {
+          await t();
+        } catch (e) {
+          // Any uncaught errors inside a test get reported as a generic failure row
+          addRow('Unknown test error', false, '', String(e));
+        }
+      }
+
+      statusEl.textContent = 'Tests complete. See table below.';
+      statusEl.classList.remove('fail');
+    })();
   </script>
 </body>
 </html>
