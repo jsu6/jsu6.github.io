@@ -1,53 +1,65 @@
 <!doctype html>
-<html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WebNN Spec-Example</title>
+</head>
 <body>
-<button id="run">run</button>
-<pre id="out"></pre>
+  <h1>WebNN Spec Example: C = 0.2*A + B</h1>
+  <button id="run">Run</button>
+  <pre id="output"></pre>
 
-<script>
-const out = document.getElementById("out");
+  <script>
+    const outputEl = document.getElementById('output');
+    document.getElementById('run').onclick = async () => {
+      outputEl.textContent = 'Running…';
 
-async function run() {
-  out.textContent = "";
+      if (!navigator.ml) {
+        outputEl.textContent = 'navigator.ml not available — WebNN unsupported.';
+        return;
+      }
 
-  if (!navigator.ml) {
-    out.textContent = "WebNN is not available.";
-    return;
-  }
+      try {
+        // Create context per spec §8.2
+        const context = await navigator.ml.createContext();
 
-  // Create context
-  const ctx = await navigator.ml.createContext();
+        // Create builder per spec §7.1 & §8.9
+        const builder = new MLGraphBuilder(context);
 
-  // Create builder
-  const b = new MLGraphBuilder(ctx);
+        // Descriptor as in spec example
+        const descriptor = { dataType: 'float32', shape: [2, 2] };
 
-  // --- Operand descriptor (must use shape + dataType)
-  const desc = { dataType: "float32", shape: [4] };
+        // Constant operand (0.2 fill) per spec example
+        const constantData = new Float32Array(4).fill(0.2);
+        const constant = builder.constant(descriptor, constantData);
 
-  // --- Inputs
-  const a = b.input("a", desc);
-  const b2 = b.input("b", desc);
+        // Inputs A and B
+        const A = builder.input('A', descriptor);
+        const B = builder.input('B', descriptor);
 
-  // --- Computation: y = relu(a + b)
-  const sum  = b.add(a, b2);
-  const relu = b.relu(sum);
+        // Graph: C = add(mul(A, constant), B)
+        const mul = builder.mul(A, constant);
+        const C = builder.add(mul, B);
 
-  // --- Build graph
-  const graph = await b.build({ y: relu });
+        // Build graph per spec §8.9.4 / §8.4
+        const graph = await builder.build({ C: C });
 
-  // --- Prepare data
-  const A = new Float32Array([1, -2, 3, -4]);
-  const B = new Float32Array([0.5, 0.5, 0.5, 0.5]);
-  const Y = new Float32Array(4);
+        // Prepare data for A and B
+        const Adata = new Float32Array([1.0, 2.0, 3.0, 4.0]);
+        const Bdata = new Float32Array([10.0, 20.0, 30.0, 40.0]);
+        const Cdata = new Float32Array(4);
 
-  // --- Execute
-  await ctx.compute(graph, { a: A, b: B }, { y: Y });
+        // Execute graph (depending on implementation this may be compute or dispatch)
+        await context.compute(graph, { A: Adata, B: Bdata }, { C: Cdata });
 
-  // --- Output
-  out.textContent = "output: [" + Array.from(Y).join(", ") + "]";
-}
-
-document.getElementById("run").onclick = run;
-</script>
+        // Display results
+        outputEl.textContent = 'A = [' + Array.from(Adata).join(', ') + ']\n' +
+                               'B = [' + Array.from(Bdata).join(', ') + ']\n' +
+                               'C = [' + Array.from(Cdata).join(', ') + ']';
+      } catch (err) {
+        outputEl.textContent = 'Error: ' + err;
+      }
+    };
+  </script>
 </body>
 </html>
