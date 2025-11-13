@@ -1,113 +1,138 @@
 <!doctype html>
-<meta charset="utf-8">
-<title>Animation API Fingerprinting — Stability Test</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8" />
+<title>Animation Timing Fingerprint (10 rounds)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  :root { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; }
-  body { padding:18px; max-width:1100px; }
-  h1 { font-size:20px; margin-bottom:8px; }
-  button { padding:8px 14px; margin:4px; border:1px solid #ccc; border-radius:6px; background:#fafafa; cursor:pointer; }
-  table { border-collapse:collapse; width:100%; margin-top:10px; }
-  th,td { border:1px solid #ddd; padding:5px 8px; font-size:13px; vertical-align:top; }
-  th { background:#f5f5f5; text-align:left; }
-  pre { background:#f9f9f9; border:1px solid #ddd; padding:8px; overflow:auto; max-height:240px; }
-  .ok { color:#080; font-weight:600; }
-  .warn { color:#c70; font-weight:600; }
-  .bad { color:#c00; font-weight:600; }
-  #box { width:20px; height:20px; background:#69f; position:absolute; }
-  #preview { width:120px; height:20px; background:#eee; overflow:hidden; position:relative; margin-top:8px; }
+  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+  body { padding: 18px; max-width: 900px; }
+  h1 { font-size: 20px; margin-bottom: 10px; }
+  button { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fafafa; cursor: pointer; }
+  pre { background: #fafafa; border: 1px solid #ddd; padding: 8px; overflow: auto; max-height: 260px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #f5f5f5; }
+  .muted { color: #666; font-size: 12px; }
 </style>
 
-<h1>Animation API Fingerprinting — Stability Test</h1>
-<p style="font-size:13px;color:#666">
-This runs the Animation-API fingerprint three times and compares hashes to estimate stability across runs.
-A stable fingerprint implies consistent timing quantization &amp; scheduler characteristics on this browser/device.
+<h1>Animation Timing Fingerprint</h1>
+<p class="muted">
+Runs 10 rounds using <code>Animation.startTime</code>, <code>updatePlaybackRate()</code>,
+<code>AnimationEffect.getComputedTiming()</code>, <code>getTiming()</code>,
+<code>updateTiming()</code>, and <code>AnimationTimeline.getCurrentTime()</code>.
+Measures average duration and stability across rounds.
 </p>
 
-<div>
-  <button id="runBtn">Run Stability Test (10 rounds)</button>
-  <button id="busyBtn">Inject 200 ms Main-Thread Jank</button>
-  <span id="status" style="font-size:12px;margin-left:10px;">idle</span>
-</div>
-<div id="preview"><div id="box"></div></div>
+<button id="runBtn">Run 10 Rounds</button>
+<span id="status" class="muted">idle</span>
 
-<table id="summary"><thead>
-<tr><th>Round</th><th>Hash</th><th>Mean Δ (ms)</th><th>Std Δ (ms)</th><th>Refresh (Hz)</th></tr>
-</thead><tbody></tbody></table>
+<table id="table">
+  <thead>
+    <tr><th>Round</th><th>Duration (ms)</th><th>Mean Frame Δ</th><th>Std</th><th>Hash</th></tr>
+  </thead>
+  <tbody></tbody>
+</table>
 
-<h3>Stability Score</h3>
-<pre id="score"></pre>
-
-<h3>Detail (JSON of Last Run)</h3>
-<pre id="detail"></pre>
+<h3>Fingerprint Summary</h3>
+<pre id="out"></pre>
 
 <script>
 (async()=>{
-const $=s=>document.querySelector(s);
-const runBtn=$("#runBtn"),busyBtn=$("#busyBtn"),status=$("#status");
-const outTBody=$("#summary tbody"),detail=$("#detail"),scoreEl=$("#score"),box=$("#box");
-
-busyBtn.onclick=()=>{const e=performance.now()+200;while(performance.now()<e){}};
+const $ = s=>document.querySelector(s);
+const runBtn=$("#runBtn"),status=$("#status"),tbody=$("#table tbody"),out=$("#out");
 
 runBtn.onclick=async()=>{
-  runBtn.disabled=true; outTBody.innerHTML=""; scoreEl.textContent=""; detail.textContent="";
-  status.textContent="running…";
-  const rounds=10, hashes=[], metrics=[];
+  runBtn.disabled=true; tbody.innerHTML=""; out.textContent=""; status.textContent="running…";
+
+  const rounds=10;
+  const hashes=[], times=[];
   for(let i=0;i<rounds;i++){
-    const res=await measureOnce();
-    hashes.push(res.hash); metrics.push(res);
-    addRow(i+1,res.hash,res.rAF.mean,res.rAF.std,res.rAF.hz);
-    await new Promise(r=>setTimeout(r,400));
+    const res = await singleRun(i+1);
+    hashes.push(res.hash);
+    times.push(res.stats.mean);
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${i+1}</td><td>${round(res.totalTime)}</td><td>${round(res.stats.mean)}</td><td>${round(res.stats.std)}</td><td style="font-family:monospace">${res.hash.slice(0,16)}…</td>`;
+    tbody.appendChild(tr);
+    await sleep(300);
   }
-  const stable=stabilityScore(hashes);
-  const note= stable>90?"ok": stable>70?"warn":"bad";
-  scoreEl.innerHTML=`Hash distance score: ${stable.toFixed(1)} % <span class="${note}">(${note})</span>\n\nHashes:\n${hashes.join("\n")}`;
-  detail.textContent=JSON.stringify(metrics[metrics.length-1],null,2);
-  status.textContent="done"; runBtn.disabled=false;
+
+  const stability = computeStability(hashes);
+  const mean = meanVal(times), std = stdVal(times,mean);
+  out.textContent = JSON.stringify({ stability, mean, std, hashes }, null, 2);
+  status.textContent = "done";
+  runBtn.disabled=false;
 };
 
-function addRow(i,h,mean,std,hz){
-  const tr=document.createElement("tr");
-  tr.innerHTML=`<td>${i}</td><td style="font-family:monospace">${h.slice(0,16)}…</td>
-  <td>${round(mean)}</td><td>${round(std)}</td><td>${hz}</td>`;
-  outTBody.appendChild(tr);
-}
+async function singleRun(roundNo){
+  const box = document.createElement("div");
+  box.style.width="20px"; box.style.height="20px";
+  box.style.background="#69f"; box.style.position="absolute"; box.style.top="0"; box.style.left="0";
+  document.body.appendChild(box);
 
-async function measureOnce(){
-  const anim=box.animate([{transform:'translateX(0px)'},{transform:'translateX(100px)'}],
-                         {duration:1000,iterations:Infinity,easing:'linear'});
-  const deltas=[],frames=200;let last;
-  await new Promise(r=>{
-    function tick(t){ if(last) deltas.push(t-last); last=t;
-      if(deltas.length<frames) requestAnimationFrame(tick); else r(); }
+  const keyframes=[{transform:'translateX(0px)'},{transform:'translateX(100px)'}];
+  const options={duration:1000,iterations:1,easing:'linear'};
+  const anim = box.animate(keyframes,options);
+
+  // access Animation.startTime, set playback rate
+  anim.startTime = document.timeline.getCurrentTime();
+  anim.updatePlaybackRate(1.0 + (Math.random()*0.2 - 0.1)); // small variation
+
+  const deltas=[], start=document.timeline.getCurrentTime();
+  let last=start;
+
+  // read timing structs
+  const timing0 = anim.effect.getTiming();
+  anim.effect.updateTiming({delay:(timing0.delay||0)+0.1}); // micro adjustment
+  const comp0 = anim.effect.getComputedTiming();
+
+  await new Promise(resolve=>{
+    function tick(t){
+      const tl=document.timeline.getCurrentTime();
+      const comp=anim.effect.getComputedTiming();
+      deltas.push(tl-last);
+      last=tl;
+      if(tl-start<1000) requestAnimationFrame(tick);
+      else resolve();
+    }
     requestAnimationFrame(tick);
   });
-  const s=stats(deltas);
-  const hz=Math.round(1000/s.mean);
-  const res={rAF:{mean:s.mean,std:s.std,hz}};
-  const hash=await hashObj(res);
-  anim.cancel(); return {...res,hash};
+
+  const total=document.timeline.getCurrentTime()-start;
+  const stats=calcStats(deltas);
+  const obj={ startTime:anim.startTime, duration:total, mean:stats.mean, std:stats.std,
+              computedTiming:compact(comp0), timing:compact(timing0)};
+  const hash=await hashObj(obj);
+
+  anim.cancel(); box.remove();
+  return { totalTime: total, stats, hash };
 }
 
-function stats(a){const c=a.filter(x=>isFinite(x));const n=c.length;
-  const mean=c.reduce((a,b)=>a+b,0)/n;
-  const v=c.reduce((a,b)=>a+(b-mean)**2,0)/n;
-  const std=Math.sqrt(v);return{mean,std,n};
+function calcStats(a){
+  const arr=a.filter(x=>isFinite(x));const n=arr.length;
+  const mean=arr.reduce((a,b)=>a+b,0)/n;
+  const v=arr.reduce((a,b)=>a+(b-mean)**2,0)/n;
+  const std=Math.sqrt(v);
+  return{mean,std,n};
 }
+
 async function hashObj(o){
-  const data=new TextEncoder().encode(JSON.stringify(o));
-  const b=await crypto.subtle.digest("SHA-256",data);
-  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");
+  const enc=new TextEncoder().encode(JSON.stringify(o));
+  const buf=await crypto.subtle.digest("SHA-256",enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
-function stabilityScore(hs){
+
+function computeStability(hs){
   if(hs.length<2)return 100;
-  const base=hs[0].split("");let total=0,diff=0;
+  const base=hs[0].split("");let diff=0,total=0;
   for(let i=1;i<hs.length;i++){
     const cur=hs[i].split("");
-    for(let j=0;j<base.length;j++){total++;if(base[j]!==cur[j])diff++;}
+    for(let j=0;j<base.length;j++){total++; if(base[j]!==cur[j]) diff++;}
   }
   return 100*(1-diff/total);
 }
+function meanVal(a){return a.reduce((x,y)=>x+y,0)/a.length;}
+function stdVal(a,m){return Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/a.length);}
+function compact(o){if(!o)return null;const pick={delay:o.delay,duration:o.duration,endDelay:o.endDelay,fill:o.fill,iterations:o.iterations,easing:o.easing};return pick;}
 function round(x){return x?Math.round(x*1000)/1000:"";}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 })();
 </script>
