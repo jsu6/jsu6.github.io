@@ -1,11 +1,11 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>WebXR Fingerprinting PoC (inline session)</title>
+<title>WebXR Fingerprinting PoC — Chrome-friendly</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 20px; }
   button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; cursor: pointer; }
-  #status { margin: 8px 0 14px; }
+  #status { margin: 10px 0 14px; }
   pre { background:#0b0b0b; color:#d7eaff; padding:12px; border-radius:10px; overflow:auto; }
   table { border-collapse: collapse; width: 100%; margin-top: 12px; }
   th, td { border: 1px solid #ddd; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
@@ -16,36 +16,34 @@
 </style>
 
 <h1>WebXR Fingerprinting PoC</h1>
-<p>This PoC uses an <b>inline</b> XR session to query WebXR APIs and print potentially identifying signals. It won’t loop forever.</p>
-<button id="run">Run inline XR probe</button>
+<p>Runs a one-frame <b>inline</b> XR session, probes WebXR objects/methods, and prints a hash + detailed signals. Ends immediately—no hanging.</p>
+<button id="run">Start</button>
 <div id="status"></div>
-<div id="summary"></div>
+
+<h3>Summary</h3>
+<div id="summary">—</div>
+
 <table id="results">
   <thead>
-    <tr>
-      <th>API</th><th>Supported?</th><th>Signal (value / shape / notes)</th>
-    </tr>
+  <tr><th>API</th><th>Supported?</th><th>Value / shape / notes</th></tr>
   </thead>
   <tbody></tbody>
 </table>
-<h3>Raw fingerprint object</h3>
+
+<h3>Raw JSON</h3>
 <pre id="raw">[not collected yet]</pre>
-<h3>Hash (djb2 of JSON)</h3>
+
+<h3>Fingerprint hash (djb2 over JSON)</h3>
 <pre id="hash">—</pre>
 
 <script>
-const $ = sel => document.querySelector(sel);
+const $ = s => document.querySelector(s);
 const tbody = $('#results tbody');
 const statusEl = $('#status');
 const rawEl = $('#raw');
 const hashEl = $('#hash');
+const summaryEl = $('#summary');
 const runBtn = $('#run');
-
-function djb2(str) {
-  let h = 5381 >>> 0;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
-  return ('00000000' + h.toString(16)).slice(-8);
-}
 
 function row(name, supported, value) {
   const tr = document.createElement('tr');
@@ -56,362 +54,403 @@ function row(name, supported, value) {
   tr.append(tdA, tdB, tdC); tbody.appendChild(tr);
 }
 
-function setStatus(msg, kind='') {
-  statusEl.textContent = msg;
-  statusEl.className = kind || '';
+function djb2(str) {
+  let h = 5381 >>> 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return ('00000000' + h.toString(16)).slice(-8);
 }
 
-async function main() {
+function setStatus(msg, kind='') { statusEl.textContent = msg; statusEl.className = kind; }
+
+function num(v) { return typeof v === 'number' && isFinite(v) ? Number(v.toFixed(6)) : v; }
+function vec3(v) { return v ? [num(v.x), num(v.y), num(v.z)] : null; }
+function quat(v) { return v ? [num(v.x), num(v.y), num(v.z), num(v.w)] : null; }
+
+function protoHas(ctor, prop) {
+  try { return !!(ctor && ctor.prototype && prop in ctor.prototype); } catch { return false; }
+}
+
+function safeCall(desc, fn) {
+  try { return { ok: true, value: fn() }; }
+  catch(e) { return { ok: false, error: String(e?.message || e) }; }
+}
+
+async function start() {
   runBtn.disabled = true;
   tbody.innerHTML = '';
   rawEl.textContent = '[collecting…]';
   hashEl.textContent = '—';
+  summaryEl.textContent = '—';
+  setStatus('', '');
 
+  const fp = Object.create(null);
+
+  // ===== 0) Static feature surface (exists/shape/version-ish) =====
+  const staticChecks = [
+    ['XRRay.direction', () => 'XRRay' in window && 'direction' in XRRay.prototype],
+    ['XRRay.origin', () => 'XRRay' in window && 'origin' in XRRay.prototype],
+    ['XRRay.matrix', () => 'XRRay' in window && 'matrix' in XRRay.prototype],
+    ['XRRigidTransform.position', () => 'XRRigidTransform' in window && 'position' in XRRigidTransform.prototype],
+    ['XRRigidTransform.orientation', () => 'XRRigidTransform' in window && 'orientation' in XRRigidTransform.prototype],
+    ['XRRigidTransform.inverse', () => 'XRRigidTransform' in window && 'inverse' in XRRigidTransform.prototype],
+    ['XRSession.updateRenderState', () => 'XRSession' in window && protoHas(XRSession, 'updateRenderState')],
+    ['XRWebGLLayer.getViewport', () => 'XRWebGLLayer' in window && protoHas(XRWebGLLayer, 'getViewport')],
+    ['XRView.eye', () => 'XRView' in window && 'eye' in XRView.prototype],
+    ['XRView.refSpaceFromView', () => 'XRView' in window && 'refSpaceFromView' in XRView.prototype], // incubations
+    ['XRViewerPose.views', () => 'XRViewerPose' in window && 'views' in XRViewerPose.prototype],
+    ['XRGPUBinding.getViewSubImage', () => 'XRGPUBinding' in window && protoHas(XRGPUBinding, 'getViewSubImage')],
+    // Incubations (Chrome behind flags/devices):
+    ['XRHand.size', () => 'XRHand' in window && 'size' in XRHand.prototype],
+    ['XRJointSpace.jointName', () => 'XRJointSpace' in window && 'jointName' in XRJointSpace.prototype],
+  ];
+  for (const [name, test] of staticChecks) {
+    const supported = !!safeCall(name, test).value;
+    fp[name] = supported;
+    row(name, supported, supported ? 'present' : 'absent');
+  }
+
+  // Non-session objects we can instantiate right now (works on Chrome):
+  if ('XRRay' in window) {
+    const res = safeCall('XRRay()', () => new XRRay());
+    if (res.ok) {
+      fp['XRRay.origin'] = vec3(res.value.origin);
+      fp['XRRay.direction'] = vec3(res.value.direction);
+      fp['XRRay.matrix'] = Array.from(res.value.matrix || []);
+      row('XRRay (origin/direction/matrix)', true,
+        `o=${fp['XRRay.origin']} d=${fp['XRRay.direction']} m=[${fp['XRRay.matrix'].length}]`);
+    } else {
+      row('XRRay (constructor)', false, res.error);
+    }
+  }
+  if ('XRRigidTransform' in window) {
+    const res = safeCall('XRRigidTransform()', () => new XRRigidTransform());
+    if (res.ok) {
+      fp['XRRigidTransform.position'] = vec3(res.value.position);
+      fp['XRRigidTransform.orientation'] = quat(res.value.orientation);
+      fp['XRRigidTransform.inverse'] = !!res.value.inverse;
+      row('XRRigidTransform.*', true,
+        `pos=${fp['XRRigidTransform.position']} ori=${fp['XRRigidTransform.orientation']} inv=${fp['XRRigidTransform.inverse']}`);
+    } else {
+      row('XRRigidTransform', false, res.error);
+    }
+  }
+
+  // ===== 1) Try to start an inline session (Chrome supports this) =====
   if (!('xr' in navigator)) {
-    setStatus('navigator.xr is unavailable in this browser.', 'no');
-    row('navigator.xr', false, 'no WebXR implementation'); return;
+    setStatus('navigator.xr is unavailable in this browser', 'no');
+    row('navigator.xr', false, 'absent');
+    return finish(fp);
   }
   row('navigator.xr', true, 'present');
 
-  // Inline session is widely available and doesn’t require a headset.
   const inlineSupported = await navigator.xr.isSessionSupported?.('inline').catch(()=>false);
   row('isSessionSupported("inline")', !!inlineSupported, String(!!inlineSupported));
 
   if (!inlineSupported) {
-    setStatus('Inline XR session not supported. Unable to probe most APIs.', 'warn');
-    finalize({});
-    return;
+    setStatus('Inline XR session not supported. Reporting static signals only.', 'warn');
+    return finish(fp);
   }
 
-  // WebGL context required for XRWebGLLayer path.
+  // WebGL context for XRWebGLLayer (Chrome creates it fine on most devices)
   const canvas = document.createElement('canvas');
   const gl = canvas.getContext('webgl', { alpha: false, antialias: false });
-  row('WebGLRenderingContext', !!gl, gl ? 'ok' : 'failed to create context');
-
-  const optionalFeatures = [
-    // Some are experimental; we request optimistically and detect at runtime.
-    'anchors',           // XRAnchor / XRFrame.createAnchor
-    'hit-test',          // XRHitTestSource
-    'hand-tracking',     // XRHand
-    'plane-detection',   // XRPlane
-    'light-estimation',  // XRLightEstimate
-    'depth-sensing',     // XRDepthInformation (CPU/GPU variants)
-    'dom-overlay',       // not fingerprinting here; useful if needed
-    'local-floor', 'bounded-floor', 'viewer' // ref spaces
-  ];
+  row('WebGLRenderingContext', !!gl, gl ? 'ok' : 'failed');
 
   let session;
   try {
-    session = await navigator.xr.requestSession('inline', { optionalFeatures });
+    session = await navigator.xr.requestSession('inline', {
+      // Ask for many incubating features; Chrome will ignore unsupported ones.
+      optionalFeatures: [
+        'viewer','local','local-floor','bounded-floor',
+        'anchors','hit-test','hand-tracking','plane-detection',
+        'light-estimation','depth-sensing'
+      ]
+    });
+    row('requestSession("inline")', true, 'started');
   } catch (e) {
-    setStatus('Failed to start inline session: ' + e, 'no');
     row('requestSession("inline")', false, String(e));
-    finalize({});
-    return;
+    setStatus('Could not start inline XR session: ' + e, 'no');
+    return finish(fp);
   }
-  row('requestSession("inline")', true, 'started');
-  setStatus('Inline XR session started. Probing…', 'ok');
 
-  // Hook WebGL layer if available
+  // Attach XRWebGLLayer (fingerprintable viewport + renderState behavior)
   if (window.XRWebGLLayer && gl) {
     try {
-      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+      const layer = new XRWebGLLayer(session, gl);
+      session.updateRenderState({ baseLayer: layer });
+      fp['XRSession.updateRenderState'] = true;
       row('XRSession.updateRenderState', true, 'baseLayer attached');
     } catch (e) {
       row('XRSession.updateRenderState', true, 'call failed: ' + e);
     }
   } else {
-    row('XRSession.updateRenderState', false, 'XRWebGLLayer or GL missing');
+    row('XRSession.updateRenderState', false, 'XRWebGLLayer or WebGL missing');
   }
 
   // Reference spaces
-  const refSpaces = {};
-  for (const kind of ['viewer', 'local', 'local-floor', 'bounded-floor']) {
+  let refSpace = null;
+  for (const kind of ['local','viewer','local-floor','bounded-floor']) {
     try {
-      refSpaces[kind] = await session.requestReferenceSpace(kind);
-      row(`requestReferenceSpace("${kind}")`, !!refSpaces[kind], 'ok');
+      const rs = await session.requestReferenceSpace(kind);
+      if (!refSpace) refSpace = rs;
+      row(`requestReferenceSpace("${kind}")`, true, 'ok');
     } catch (e) {
       row(`requestReferenceSpace("${kind}")`, false, String(e));
     }
   }
-  const refSpace = refSpaces['local'] || refSpaces['viewer'];
-
-  // Per-frame probe (we stop after 2 frames)
-  const fp = {
-    // We’ll fill these as we learn them:
-    'XRAnchor.Delete': 'unavailable',
-    'XRDepthInformation.height': 'unavailable',
-    'XRDepthInformation.normDepthBufferFromNormView': 'unavailable',
-    'XRDepthInformation.rawValueToMeters': 'unavailable',
-    'XRDepthInformation.width': 'unavailable',
-    'XRFrame.createAnchor': 'unavailable',
-    'XRGPUBinding.getViewSubImage': 'unavailable',
-    'XRHand.size': 'unavailable',
-    'XRHitTestSource.cancel': 'unavailable',
-    'XRImageTrackingResult.imageSpace': 'unavailable',
-    'XRImageTrackingResult.index': 'unavailable',
-    'XRImageTrackingResult.measuredWidthInMeters': 'unavailable',
-    'XRImageTrackingResult.trackingState': 'unavailable',
-    'XRJointSpace.jointName': 'unavailable',
-    'XRLightEstimate.primaryLightDirection': 'unavailable',
-    'XRLightEstimate.primaryLightIntensity': 'unavailable',
-    'XRLightEstimate.sphericalHarmonicsCoefficients': 'unavailable',
-    'XRPlane.lastChangedTime': 'unavailable',
-    'XRPlane.planeSpace': 'unavailable',
-    'XRPlane.polygon': 'unavailable',
-    'XRRay.direction': 'unavailable',
-    'XRRay.matrix': 'unavailable',
-    'XRRay.origin': 'unavailable',
-    'XRRigidTransform.inverse': 'unavailable',
-    'XRRigidTransform.orientation': 'unavailable',
-    'XRRigidTransform.position': 'unavailable',
-    'XRSession.updateRenderState': !!session.updateRenderState,
-    'XRView.eye': 'unavailable',
-    'XRView.refSpaceFromView': 'unavailable',
-    'XRViewerPose.views': 'unavailable',
-    'XRWebGLLayer.getViewport': 'unavailable'
-  };
-
-  // Non-session classes we can sample immediately:
-  try {
-    const ray = new XRRay();
-    fp['XRRay.origin'] = toVec3(ray.origin);
-    fp['XRRay.direction'] = toVec3(ray.direction);
-    fp['XRRay.matrix'] = Array.from(ray.matrix);
-    row('XRRay.origin/direction/matrix', true, `origin=${fmtVec(ray.origin)} dir=${fmtVec(ray.direction)} [matrix 16]`);
-  } catch {
-    row('XRRay (constructor)', false, 'not available');
-  }
-  try {
-    const t = new XRRigidTransform();
-    fp['XRRigidTransform.position'] = toVec3(t.position);
-    fp['XRRigidTransform.orientation'] = toQuat(t.orientation);
-    fp['XRRigidTransform.inverse'] = !!t.inverse;
-    row('XRRigidTransform.*', true, `pos=${fmtVec(t.position)} ori=${fmtQuat(t.orientation)} inverse=${!!t.inverse}`);
-  } catch {
-    row('XRRigidTransform', false, 'not available');
+  if (!refSpace) {
+    setStatus('No usable reference space; collecting minimal signals.', 'warn');
   }
 
-  // Optional: WebGPU XRGPUBinding check (don’t fail if absent)
-  if ('XRGPUBinding' in window) {
-    fp['XRGPUBinding.getViewSubImage'] = typeof XRGPUBinding.prototype?.getViewSubImage === 'function';
-    row('XRGPUBinding.getViewSubImage', !!fp['XRGPUBinding.getViewSubImage'], String(fp['XRGPUBinding.getViewSubImage']));
-  } else {
-    row('XRGPUBinding.getViewSubImage', false, 'XRGPUBinding not present');
-  }
+  // ===== 2) One-frame probe (then end) =====
+  setStatus('Probing in a single XR frame…', 'ok');
 
-  let frames = 0;
-  const done = new Promise(resolve => {
-    session.requestAnimationFrame(function onFrame(t, frame) {
-      frames++;
+  const oneFrame = new Promise(resolve => {
+    session.requestAnimationFrame((t, frame) => {
       try {
-        if (!refSpace) throw new Error('no reference space');
-        const pose = frame.getViewerPose?.('local') || frame.getViewerPose?.(refSpace);
+        // Viewer pose (inline typically returns a single mono view on Chrome)
+        let pose = null;
+        if (frame.getViewerPose) {
+          // Prefer 'local' if available; else 'viewer'
+          pose = refSpace ? frame.getViewerPose(refSpace) : frame.getViewerPose('viewer');
+        }
+
         if (pose) {
           fp['XRViewerPose.views'] = pose.views.length;
-          row('XRViewerPose.views', true, String(pose.views.length));
-          const baseLayer = session.renderState?.baseLayer;
 
-          // XRView.eye + XRWebGLLayer.getViewport
           const eyes = [];
           for (const v of pose.views) {
             eyes.push(v.eye || 'unknown');
-            if (baseLayer && baseLayer.getViewport) {
-              const vp = baseLayer.getViewport(v);
-              if (vp) fp['XRWebGLLayer.getViewport'] = [vp.x, vp.y, vp.width, vp.height];
-            }
-            // Nonstandard refSpaceFromView (feature-detect)
-            fp['XRView.refSpaceFromView'] = fp['XRView.refSpaceFromView'] || (('refSpaceFromView' in v) ? 'present' : 'absent');
+            // XRWebGLLayer.getViewport (viewport usually equals canvas size in inline)
+            const layer = session.renderState?.baseLayer;
+            const vp = (layer && layer.getViewport) ? layer.getViewport(v) : null;
+            if (vp) fp['XRWebGLLayer.getViewport'] = [vp.x, vp.y, vp.width, vp.height];
+
+            // Non-standard refSpaceFromView (Chrome: usually absent unless incubations)
+            fp['XRView.refSpaceFromView'] = (fp['XRView.refSpaceFromView'] === 'present') ? 'present'
+              : (('refSpaceFromView' in v) ? 'present' : 'absent');
           }
           fp['XRView.eye'] = eyes;
+          row('XRViewerPose.views', true, String(fp['XRViewerPose.views']));
           row('XRView.eye', true, eyes.join(', '));
-          row('XRWebGLLayer.getViewport', !!fp['XRWebGLLayer.getViewport'], JSON.stringify(fp['XRWebGLLayer.getViewport'] || 'n/a'));
+          row('XRWebGLLayer.getViewport', !!fp['XRWebGLLayer.getViewport'],
+              JSON.stringify(fp['XRWebGLLayer.getViewport'] || 'n/a'));
+        } else {
+          row('getViewerPose', false, 'no pose this frame');
+        }
 
-          // Light estimation
-          if (frame.getLightEstimate) {
-            const le = frame.getLightEstimate(refSpace);
-            if (le) {
-              if ('primaryLightDirection' in le) {
-                fp['XRLightEstimate.primaryLightDirection'] = toVec3(le.primaryLightDirection);
-                row('XRLightEstimate.primaryLightDirection', true, fmtVec(le.primaryLightDirection));
-              }
-              if ('primaryLightIntensity' in le) {
-                fp['XRLightEstimate.primaryLightIntensity'] = Array.from(le.primaryLightIntensity || []);
-                row('XRLightEstimate.primaryLightIntensity', true, `[${(le.primaryLightIntensity||[]).length}]`);
-              }
-              if ('sphericalHarmonicsCoefficients' in le) {
-                const sh = le.sphericalHarmonicsCoefficients;
-                fp['XRLightEstimate.sphericalHarmonicsCoefficients'] = sh ? Array.from(sh) : null;
-                row('XRLightEstimate.sphericalHarmonicsCoefficients', !!sh, sh ? `${sh.length} coeffs` : 'null');
-              }
-            } else {
-              row('XRLightEstimate.*', false, 'no estimate this frame');
-            }
+        // Depth (Chrome: present only with flags/devices; we still record shape)
+        if (frame.getDepthInformation) {
+          const v = pose?.views?.[0];
+          const di = v ? frame.getDepthInformation(v) : null;
+          if (di) {
+            fp['XRDepthInformation.width']  = di.width ?? null;
+            fp['XRDepthInformation.height'] = di.height ?? null;
+            fp['XRDepthInformation.normDepthBufferFromNormView'] = typeof di.normDepthBufferFromNormView === 'function';
+            fp['XRDepthInformation.rawValueToMeters'] = typeof di.rawValueToMeters === 'function';
+            row('XRDepthInformation.width/height', true, `${di.width}×${di.height}`);
+            row('XRDepthInformation.normDepthBufferFromNormView', !!fp['XRDepthInformation.normDepthBufferFromNormView'], String(fp['XRDepthInformation.normDepthBufferFromNormView']));
+            row('XRDepthInformation.rawValueToMeters', !!fp['XRDepthInformation.rawValueToMeters'], String(fp['XRDepthInformation.rawValueToMeters']));
           } else {
-            row('XRLightEstimate.*', false, 'getLightEstimate not present');
+            row('XRDepthInformation', false, 'none for this frame');
           }
+        } else {
+          row('XRDepthInformation', false, 'getDepthInformation absent');
+        }
 
-          // Depth
-          if (frame.getDepthInformation) {
-            const di = frame.getDepthInformation(pose.views[0]);
-            if (di) {
-              fp['XRDepthInformation.width'] = di.width ?? null;
-              fp['XRDepthInformation.height'] = di.height ?? null;
-              row('XRDepthInformation.width/height', true, `${di.width}×${di.height}`);
-              // Probe legacy/impl-specific names if present:
-              fp['XRDepthInformation.normDepthBufferFromNormView'] = typeof di.normDepthBufferFromNormView === 'function';
-              fp['XRDepthInformation.rawValueToMeters'] = typeof di.rawValueToMeters === 'function';
-              row('XRDepthInformation.normDepthBufferFromNormView', !!di?.normDepthBufferFromNormView, String(!!di?.normDepthBufferFromNormView));
-              row('XRDepthInformation.rawValueToMeters', !!di?.rawValueToMeters, String(!!di?.rawValueToMeters));
-            } else {
-              row('XRDepthInformation', false, 'no depth for this view/frame');
-            }
-          } else {
-            row('XRDepthInformation', false, 'getDepthInformation not present');
+        // Planes (usually absent in inline; record absence explicitly)
+        const wi = frame.worldInformation || {};
+        if (wi.detectedPlanes && wi.detectedPlanes.size) {
+          const first = wi.detectedPlanes.values().next().value;
+          if (first) {
+            fp['XRPlane.lastChangedTime'] = first.lastChangedTime ?? null;
+            fp['XRPlane.planeSpace'] = !!first.planeSpace;
+            fp['XRPlane.polygon'] = (first.polygon && first.polygon.length) || 0;
+            row('XRPlane.lastChangedTime/planeSpace/polygon', true,
+               `t=${first.lastChangedTime} space=${!!first.planeSpace} poly=${(first.polygon||[]).length}`);
           }
+        } else {
+          row('XRPlane.*', false, 'no planes');
+        }
 
-          // Planes
-          const wi = frame.worldInformation || {};
-          if (wi.detectedPlanes && wi.detectedPlanes.size) {
-            const first = wi.detectedPlanes.values().next().value;
-            if (first) {
-              fp['XRPlane.lastChangedTime'] = first.lastChangedTime ?? null;
-              fp['XRPlane.planeSpace'] = !!first.planeSpace;
-              fp['XRPlane.polygon'] = (first.polygon && first.polygon.length) || 0;
-              row('XRPlane.lastChangedTime/planeSpace/polygon', true,
-                  `t=${first.lastChangedTime} space=${!!first.planeSpace} poly=${(first.polygon||[]).length}`);
-            }
-          } else {
-            row('XRPlane.*', false, 'no detected planes');
-          }
-
-          // Anchors
-          if (frame.createAnchor && refSpace) {
-            try {
-              const anchor = awaitMaybe(frame.createAnchor(new XRRigidTransform(), refSpace));
-              fp['XRFrame.createAnchor'] = !!anchor;
-              row('XRFrame.createAnchor', !!anchor, anchor ? 'ok' : 'failed');
-              if (anchor?.delete) {
+        // Anchors (Chrome mobile with flags; otherwise record capability)
+        if (frame.createAnchor && refSpace) {
+          // Fire-and-forget creation (no await to keep frame tight)
+          try {
+            frame.createAnchor(new XRRigidTransform(), refSpace).then(a => {
+              fp['XRFrame.createAnchor'] = !!a;
+              row('XRFrame.createAnchor', !!a, a ? 'ok' : 'failed');
+              if (a?.delete) {
                 fp['XRAnchor.Delete'] = true;
-                try { awaitMaybe(anchor.delete()); } catch {}
+                a.delete().catch(()=>{});
                 row('XRAnchor.delete', true, 'supported');
               } else {
-                row('XRAnchor.delete', false, 'method absent');
+                row('XRAnchor.delete', false, 'absent');
               }
-            } catch (e) {
+              finish(fp); // finalize once async completes
+            }).catch(e => {
+              fp['XRFrame.createAnchor'] = 'threw';
               row('XRFrame.createAnchor', true, 'threw: ' + e);
-            }
-          } else {
-            row('XRFrame.createAnchor', false, 'anchors not available');
+              finish(fp);
+            });
+          } catch (e) {
+            row('XRFrame.createAnchor', true, 'sync throw: ' + e);
           }
+        } else {
+          row('XRFrame.createAnchor', false, 'anchors not available');
+        }
 
-          // Hit-test
-          if (session.requestHitTestSource) {
-            try {
-              const src = awaitMaybe(session.requestHitTestSource({ space: refSpace }));
-              if (src) {
-                fp['XRHitTestSource.cancel'] = typeof src.cancel === 'function';
-                row('XRHitTestSource.cancel', !!fp['XRHitTestSource.cancel'], String(!!fp['XRHitTestSource.cancel']));
-                try { src.cancel?.(); } catch {}
-              } else {
-                row('XRHitTestSource.cancel', false, 'could not create source');
-              }
-            } catch (e) {
+        // Hit-test (capability + cancel presence)
+        if (session.requestHitTestSource) {
+          session.requestHitTestSource({ space: refSpace || 'viewer' })
+            .then(src => {
+              fp['XRHitTestSource.cancel'] = typeof src.cancel === 'function';
+              row('XRHitTestSource.cancel', !!fp['XRHitTestSource.cancel'], String(fp['XRHitTestSource.cancel']));
+              try { src.cancel?.(); } catch {}
+              finish(fp);
+            })
+            .catch(e => {
               row('XRHitTestSource.cancel', false, 'requestHitTestSource threw: ' + e);
-            }
-          } else {
-            row('XRHitTestSource.cancel', false, 'hit-test not available');
-          }
-
-          // Hand tracking
-          const handSrc = [...session.inputSources || []].find(s => s.hand);
-          if (handSrc?.hand) {
-            const h = handSrc.hand;
-            fp['XRHand.size'] = h.size ?? null;
-            row('XRHand.size', true, String(h.size));
-            // XRJointSpace.jointName (nonstandard on some impls)
-            const sampleJoint = h.values().next().value;
-            if (sampleJoint) {
-              fp['XRJointSpace.jointName'] = sampleJoint.jointName ?? null;
-              row('XRJointSpace.jointName', sampleJoint.jointName != null, String(sampleJoint.jointName ?? 'absent'));
-            } else {
-              row('XRJointSpace.jointName', false, 'no joints enumerated');
-            }
-          } else {
-            row('XRHand.size / XRJointSpace.jointName', false, 'no hand-tracking source');
-          }
-
-          // Image tracking
-          if (frame.getImageTrackingResults) {
-            const results = frame.getImageTrackingResults();
-            if (results && results.length) {
-              const r = results[0];
-              fp['XRImageTrackingResult.index'] = r.index ?? null;
-              fp['XRImageTrackingResult.trackingState'] = r.trackingState ?? null;
-              fp['XRImageTrackingResult.measuredWidthInMeters'] = r.measuredWidthInMeters ?? null;
-              fp['XRImageTrackingResult.imageSpace'] = !!r.imageSpace;
-              row('XRImageTrackingResult.*', true, `idx=${r.index} state=${r.trackingState} width=${r.measuredWidthInMeters} space=${!!r.imageSpace}`);
-            } else {
-              row('XRImageTrackingResult.*', false, 'no results');
-            }
-          } else {
-            row('XRImageTrackingResult.*', false, 'getImageTrackingResults not present');
-          }
-
+              finish(fp);
+            });
         } else {
-          row('getViewerPose', false, 'no pose (expected on some inline impls)');
+          row('XRHitTestSource.cancel', false, 'not available');
         }
 
-        // Stop after 2 frames to avoid long-running loops.
-        if (frames >= 2) {
-          session.end().catch(()=>{});
-          resolve();
+        // Hand tracking (record size and jointName if available)
+        const handSrc = [...(session.inputSources || [])].find(s => s.hand);
+        if (handSrc?.hand) {
+          const h = handSrc.hand;
+          fp['XRHand.size'] = h.size ?? null;
+          row('XRHand.size', true, String(h.size));
+          const j = h.values().next().value;
+          fp['XRJointSpace.jointName'] = j?.jointName ?? null;
+          row('XRJointSpace.jointName', j?.jointName != null, String(fp['XRJointSpace.jointName']));
         } else {
-          session.requestAnimationFrame(onFrame);
+          row('XRHand.size / XRJointSpace.jointName', false, 'no hand source');
         }
-      } catch (e) {
-        row('frame probe error', true, String(e));
+
+        // Image tracking (index/state/width/space)
+        if (frame.getImageTrackingResults) {
+          const results = frame.getImageTrackingResults();
+          if (results && results.length) {
+            const r = results[0];
+            fp['XRImageTrackingResult.index'] = r.index ?? null;
+            fp['XRImageTrackingResult.trackingState'] = r.trackingState ?? null;
+            fp['XRImageTrackingResult.measuredWidthInMeters'] = r.measuredWidthInMeters ?? null;
+            fp['XRImageTrackingResult.imageSpace'] = !!r.imageSpace;
+            row('XRImageTrackingResult.*', true,
+               `idx=${r.index} state=${r.trackingState} width=${r.measuredWidthInMeters} space=${!!r.imageSpace}`);
+          } else {
+            row('XRImageTrackingResult.*', false, 'no results');
+          }
+        } else {
+          row('XRImageTrackingResult.*', false, 'absent');
+        }
+
+        // Light estimation (direction/intensity/SH coeffs)
+        if (frame.getLightEstimate && refSpace) {
+          const le = frame.getLightEstimate(refSpace);
+          if (le) {
+            if ('primaryLightDirection' in le) {
+              fp['XRLightEstimate.primaryLightDirection'] = vec3(le.primaryLightDirection);
+              row('XRLightEstimate.primaryLightDirection', true, String(fp['XRLightEstimate.primaryLightDirection']));
+            }
+            if ('primaryLightIntensity' in le) {
+              const v = le.primaryLightIntensity ?? null;
+              fp['XRLightEstimate.primaryLightIntensity'] = v ? Array.from(v) : null;
+              row('XRLightEstimate.primaryLightIntensity', !!v, v ? `${v.length} chan` : 'null');
+            }
+            if ('sphericalHarmonicsCoefficients' in le) {
+              const sh = le.sphericalHarmonicsCoefficients ?? null;
+              fp['XRLightEstimate.sphericalHarmonicsCoefficients'] = sh ? Array.from(sh) : null;
+              row('XRLightEstimate.sphericalHarmonicsCoefficients', !!sh, sh ? `${sh.length} coeffs` : 'null');
+            }
+          } else {
+            row('XRLightEstimate.*', false, 'no estimate this frame');
+          }
+        } else {
+          row('XRLightEstimate.*', false, 'absent');
+        }
+
+        // XRGPUBinding (record presence/shape even if not usable)
+        if ('XRGPUBinding' in window) {
+          fp['XRGPUBinding.getViewSubImage'] = protoHas(XRGPUBinding, 'getViewSubImage');
+          row('XRGPUBinding.getViewSubImage', !!fp['XRGPUBinding.getViewSubImage'], String(fp['XRGPUBinding.getViewSubImage']));
+        } else {
+          row('XRGPUBinding.getViewSubImage', false, 'XRGPUBinding absent');
+        }
+      } finally {
+        // End promptly; finish(fp) will run once pending async checks resolve
         session.end().catch(()=>{});
-        resolve();
       }
     });
   });
 
-  // Timeout hard-stop (e.g., if RAF never fires)
-  const timeout = new Promise(res => setTimeout(res, 1500));
-  await Promise.race([done, timeout]);
-  try { await session.end(); } catch {}
-
-  finalize(fp);
+  // Safety timeout to finalize even if promises don’t resolve
+  await Promise.race([oneFrame, new Promise(r => setTimeout(r, 1200))]);
+  // If finish() already ran, it’s a no-op; otherwise finalize now:
+  finish(fp);
 }
 
-function toVec3(v) {
-  if (!v) return null;
-  return [Number(v.x?.toFixed?.(6) ?? v.x ?? 0),
-          Number(v.y?.toFixed?.(6) ?? v.y ?? 0),
-          Number(v.z?.toFixed?.(6) ?? v.z ?? 0)];
-}
-function toQuat(q) {
-  if (!q) return null;
-  return [Number(q.x?.toFixed?.(6) ?? q.x ?? 0),
-          Number(q.y?.toFixed?.(6) ?? q.y ?? 0),
-          Number(q.z?.toFixed?.(6) ?? q.z ?? 0),
-          Number(q.w?.toFixed?.(6) ?? q.w ?? 0)];
-}
-function fmtVec(v) { return v ? `(${[v.x,v.y,v.z].map(n=>Number(n).toFixed?.(3) ?? n).join(', ')})` : 'null'; }
-function fmtQuat(q){ return q ? `(${[q.x,q.y,q.z,q.w].map(n=>Number(n).toFixed?.(3) ?? n).join(', ')})` : 'null'; }
-function awaitMaybe(p) { return (p && typeof p.then === 'function') ? p : Promise.resolve(p); }
+let finished = false;
+function finish(fp) {
+  if (finished) return;
+  finished = true;
 
-function finalize(fp) {
-  // Fill table entries for anything not hit earlier (to be explicit)
-  for (const [k,v] of Object.entries(fp)) {
-    // The rows have already been printed as we probed; skip here.
-  }
-  const json = JSON.stringify(fp, null, 2);
+  // Mark missing items from the user’s list explicitly if not set:
+  const keysWanted = [
+    'XRAnchor.Delete',
+    'XRDepthInformation.height',
+    'XRDepthInformation.normDepthBufferFromNormView',
+    'XRDepthInformation.rawValueToMeters',
+    'XRDepthInformation.width',
+    'XRFrame.createAnchor',
+    'XRGPUBinding.getViewSubImage',
+    'XRHand.size',
+    'XRHitTestSource.cancel',
+    'XRImageTrackingResult.imageSpace',
+    'XRImageTrackingResult.index',
+    'XRImageTrackingResult.measuredWidthInMeters',
+    'XRImageTrackingResult.trackingState',
+    'XRJointSpace.jointName',
+    'XRLightEstimate.primaryLightDirection',
+    'XRLightEstimate.primaryLightIntensity',
+    'XRLightEstimate.sphericalHarmonicsCoefficients',
+    'XRPlane.lastChangedTime',
+    'XRPlane.planeSpace',
+    'XRPlane.polygon',
+    'XRRay.direction',
+    'XRRay.matrix',
+    'XRRay.origin',
+    'XRRigidTransform.inverse',
+    'XRRigidTransform.orientation',
+    'XRRigidTransform.position',
+    'XRSession.updateRenderState',
+    'XRView.eye',
+    'XRView.refSpaceFromView',
+    'XRViewerPose.views',
+    'XRWebGLLayer.getViewport'
+  ];
+  for (const k of keysWanted) if (!(k in fp)) fp[k] = 'unavailable';
+
+  // Basic “entropy” proxy: number of defined (non-"unavailable") keys + JSON length
+  const defined = Object.entries(fp).filter(([_,v]) => v !== 'unavailable' && v !== false && v != null).length;
+  const json = JSON.stringify(fp, (k,v) => (Array.isArray(v) && v.length>64 ? `[len=${v.length}]` : v), 2);
+  const h = djb2(json);
   rawEl.textContent = json;
-  hashEl.textContent = djb2(json);
-  setStatus('Finished. See results below.');
+  hashEl.textContent = h;
+  summaryEl.textContent = `Signals defined: ${defined}/${keysWanted.length} • JSON bytes: ${json.length} • hash: ${h}`;
+  setStatus('Done. Compare the hash across devices/runs to see stability/variance.', 'ok');
 }
 
-runBtn.addEventListener('click', main);
+runBtn.addEventListener('click', () => {
+  finished = false;
+  start().catch(e => {
+    setStatus('Unexpected error: ' + e, 'no');
+    runBtn.disabled = false;
+  }).finally(() => {
+    runBtn.disabled = false;
+  });
+});
 </script>
