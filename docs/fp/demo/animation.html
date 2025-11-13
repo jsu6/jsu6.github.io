@@ -1,24 +1,31 @@
 <!DOCTYPE html>
-<body>
+<html>
+<body style="font-family: sans-serif; padding: 20px;">
+
+<h2>Animation Timing Drift Demo</h2>
+<p>This shows how <code>animation.currentTime</code> changes each frame.</p>
+
+<div id="output" style="margin-top: 20px; white-space: pre; font-family: monospace;"></div>
+
 <script>
-// Create a small animation to observe timing behavior
+// Create a small animation element
 const box = document.createElement("div");
 box.style.width = "20px";
 box.style.height = "20px";
 box.style.background = "black";
+box.style.marginTop = "20px";
 document.body.appendChild(box);
 
 // Animate it
 const animation = box.animate(
-  [{ transform: "translateX(0px)" }, { transform: "translateX(100px)" }],
+  [{ transform: "translateX(0px)" }, { transform: "translateX(200px)" }],
   { duration: 1000, iterations: Infinity }
 );
 
-// Collect timing observations
 let samples = [];
+const output = document.getElementById("output");
 
 function sample() {
-  // currentTime is tied to device refresh rate and animation timeline
   const t = animation.currentTime;
 
   if (t != null) {
@@ -39,16 +46,23 @@ function analyze(samples) {
     deltas.push(samples[i] - samples[i - 1]);
   }
 
-  console.log("Observed frame deltas:", deltas);
-  console.log("Average delta:", avg(deltas));
-  console.log("Min/max delta:", Math.min(...deltas), Math.max(...deltas));
-}
+  function avg(arr) {
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }
 
-function avg(arr) {
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
+  const text =
+    "Frame deltas (ms):\n" +
+    deltas.map(x => x.toFixed(2)).join(", ") +
+    "\n\nAverage delta: " + avg(deltas).toFixed(3) + " ms" +
+    "\nMin delta:     " + Math.min(...deltas).toFixed(3) + " ms" +
+    "\nMax delta:     " + Math.max(...deltas).toFixed(3) + " ms";
+
+  output.textContent = text;
 }
 
 // Start sampling
 sample();
 </script>
+
 </body>
+</html>
