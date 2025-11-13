@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>WebNN Demo – Show Results on Page</title>
+  <title>WebNN Demo – Extended Calculations</title>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -33,16 +33,24 @@
       border-radius: 4px;
       overflow-x: auto;
       font-size: 0.9rem;
+      line-height: 1.4;
     }
     .error {
       color: #b00020;
       font-weight: bold;
     }
+    .note {
+      font-size: 0.9rem;
+      color: #555;
+    }
   </style>
 </head>
 <body>
-  <h1>WebNN Result Viewer</h1>
-  <p>Click the buttons below to run each example and see the tensor results.</p>
+  <h1>WebNN Extended Result Viewer</h1>
+  <p class="note">
+    This page runs your WebNN examples and also does extra calculations:
+    CPU-side reference results, sums, means, and element-wise differences.
+  </p>
 
   <div class="example">
     <h2>Example 1: ((0.5 + input1) * (0.5 + input2))</h2>
@@ -59,8 +67,27 @@
   </div>
 
   <script>
+    // ---- Helper functions ----
     function arrayToString(arr) {
       return '[' + Array.from(arr).join(', ') + ']';
+    }
+
+    function computeStats(arr) {
+      let sum = 0;
+      for (let i = 0; i < arr.length; i++) {
+        sum += arr[i];
+      }
+      const mean = arr.length > 0 ? sum / arr.length : 0;
+      return { sum, mean };
+    }
+
+    function diffArrays(a, b) {
+      const len = Math.min(a.length, b.length);
+      const diff = new Float32Array(len);
+      for (let i = 0; i < len; i++) {
+        diff[i] = a[i] - b[i];
+      }
+      return diff;
     }
 
     function showError(containerId, msg) {
@@ -68,6 +95,7 @@
       el.innerHTML = '<span class="error">' + msg + '</span>';
     }
 
+    // ---- Example 1 ----
     async function runExample1() {
       const statusEl = document.getElementById('status1');
       const outputEl = document.getElementById('output1');
@@ -124,9 +152,9 @@
           context.createTensor({ dataType: 'float32', shape: TENSOR_SHAPE, readable: true })
         ]);
 
-        // Initialize input values.
-        const inputData1 = new Float32Array(TENSOR_SIZE).fill(1.0);  // example values
-        const inputData2 = new Float32Array(TENSOR_SIZE).fill(0.8);  // example values
+        // Initialize input values (example values).
+        const inputData1 = new Float32Array(TENSOR_SIZE).fill(1.0);
+        const inputData2 = new Float32Array(TENSOR_SIZE).fill(0.8);
 
         await Promise.all([
           context.writeTensor(inputTensor1, inputData1),
@@ -144,23 +172,46 @@
 
         await context.dispatch(graph, inputs, outputs);
 
-        // Read back the result.
+        // Read back the result from WebNN.
         const result = await context.readTensor(outputTensor);
-        const resultArray = new Float32Array(result);
+        const webnnResult = new Float32Array(result);
+
+        // ---- Extra calculations (CPU-side reference & stats) ----
+        // CPU reference: (0.5 + input1[i]) * (0.5 + input2[i])
+        const cpuResult = new Float32Array(TENSOR_SIZE);
+        for (let i = 0; i < TENSOR_SIZE; i++) {
+          cpuResult[i] = (0.5 + inputData1[i]) * (0.5 + inputData2[i]);
+        }
+
+        const statsWebNN = computeStats(webnnResult);
+        const statsCPU   = computeStats(cpuResult);
+        const diff       = diffArrays(webnnResult, cpuResult);
+        const statsDiff  = computeStats(diff);
 
         statusEl.textContent = 'Done.';
+
         outputEl.textContent =
-          'Shape: ' + JSON.stringify(TENSOR_SHAPE) + '\n' +
-          'Input1:   ' + arrayToString(inputData1) + '\n' +
-          'Input2:   ' + arrayToString(inputData2) + '\n' +
-          'Result:   ' + arrayToString(resultArray) + '\n' +
-          'Formula: (0.5 + input1) * (0.5 + input2)';
+          'Tensor shape: ' + JSON.stringify(TENSOR_SHAPE) + '\n\n' +
+          'Input1:            ' + arrayToString(inputData1) + '\n' +
+          'Input2:            ' + arrayToString(inputData2) + '\n\n' +
+          'Formula: (0.5 + input1) * (0.5 + input2)\n\n' +
+          'WebNN result:      ' + arrayToString(webnnResult) + '\n' +
+          '  sum  = ' + statsWebNN.sum.toFixed(6) + '\n' +
+          '  mean = ' + statsWebNN.mean.toFixed(6) + '\n\n' +
+          'CPU reference:     ' + arrayToString(cpuResult) + '\n' +
+          '  sum  = ' + statsCPU.sum.toFixed(6) + '\n' +
+          '  mean = ' + statsCPU.mean.toFixed(6) + '\n\n' +
+          'Difference (WebNN - CPU):\n' +
+          '  values: ' + arrayToString(diff) + '\n' +
+          '  sum of diff  = ' + statsDiff.sum.toFixed(6) + '\n' +
+          '  mean of diff = ' + statsDiff.mean.toFixed(6);
       } catch (err) {
         console.error(err);
         showError('status1', 'Error during Example 1: ' + err);
       }
     }
 
+    // ---- Example 2 ----
     async function runExample2() {
       const statusEl = document.getElementById('status2');
       const outputEl = document.getElementById('output2');
@@ -218,15 +269,37 @@
 
         // 6. Read back the computed result.
         const result = await context.readTensor(outputTensorC);
-        const resultArray = new Float32Array(result);
+        const webnnResult = new Float32Array(result);
+
+        // ---- Extra calculations (CPU-side reference & stats) ----
+        // CPU reference: C = 0.2 * A + B
+        const cpuResult = new Float32Array(4);
+        for (let i = 0; i < 4; i++) {
+          cpuResult[i] = 0.2 * dataA[i] + dataB[i];
+        }
+
+        const statsWebNN = computeStats(webnnResult);
+        const statsCPU   = computeStats(cpuResult);
+        const diff       = diffArrays(webnnResult, cpuResult);
+        const statsDiff  = computeStats(diff);
 
         statusEl.textContent = 'Done.';
+
         outputEl.textContent =
-          'Shape: ' + JSON.stringify(descriptor.shape) + '\n' +
+          'Shape: ' + JSON.stringify(descriptor.shape) + '\n\n' +
           'A:      ' + arrayToString(dataA) + '\n' +
-          'B:      ' + arrayToString(dataB) + '\n' +
-          'C = 0.2 * A + B\n' +
-          'C:      ' + arrayToString(resultArray);
+          'B:      ' + arrayToString(dataB) + '\n\n' +
+          'Formula: C = 0.2 * A + B\n\n' +
+          'WebNN result (C):  ' + arrayToString(webnnResult) + '\n' +
+          '  sum  = ' + statsWebNN.sum.toFixed(6) + '\n' +
+          '  mean = ' + statsWebNN.mean.toFixed(6) + '\n\n' +
+          'CPU reference (C): ' + arrayToString(cpuResult) + '\n' +
+          '  sum  = ' + statsCPU.sum.toFixed(6) + '\n' +
+          '  mean = ' + statsCPU.mean.toFixed(6) + '\n\n' +
+          'Difference (WebNN - CPU):\n' +
+          '  values: ' + arrayToString(diff) + '\n' +
+          '  sum of diff  = ' + statsDiff.sum.toFixed(6) + '\n' +
+          '  mean of diff = ' + statsDiff.mean.toFixed(6);
       } catch (err) {
         console.error(err);
         showError('status2', 'Error during Example 2: ' + err);
