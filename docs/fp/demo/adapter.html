@@ -2,202 +2,89 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>GPUAdapter Full API Inspector</title>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      padding: 20px;
-      background: #f0f0f0;
-    }
-    h1 {
-      margin-bottom: 15px;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      background: white;
-      margin-top: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
-      vertical-align: top;
-      font-size: 14px;
-    }
-    th {
-      background: #eee;
-    }
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      margin: 0;
-    }
-    #status {
-      font-weight: bold;
-      margin-bottom: 10px;
-    }
-    button {
-      padding: 8px 14px;
-      margin-top: 10px;
-    }
-  </style>
+  <title>Simple WebGPU Adapter Dump</title>
 </head>
 <body>
+<pre id="out">Running…</pre>
 
-<h1>GPUAdapter Full API Inspector</h1>
-<div id="status">Initializing…</div>
+<script type="module">
+async function main() {
+  const out = document.getElementById('out');
+  out.textContent = '';
 
-<button onclick="run()">Re-run</button>
+  function log(...args) {
+    console.log(...args);
+    out.textContent += args.join(' ') + '\n';
+  }
 
-<table>
-  <thead>
-    <tr>
-      <th>Property</th>
-      <th>Condition / Notes</th>
-      <th>Type</th>
-      <th>Value</th>
-    </tr>
-  </thead>
-  <tbody id="out"></tbody>
-</table>
-
-<script>
-async function run() {
-  const out = document.getElementById("out");
-  const status = document.getElementById("status");
-  out.innerHTML = "";
-  status.textContent = "Requesting GPU adapter…";
-
-  const addRow = (name, cond, type, value) => {
-    out.innerHTML += `
-      <tr>
-        <td>${name}</td>
-        <td>${cond}</td>
-        <td>${type}</td>
-        <td><pre>${value}</pre></td>
-      </tr>`;
-  };
-
-  if (!navigator.gpu) {
-    status.textContent = "WebGPU not supported.";
+  if (!('gpu' in navigator)) {
+    log('WebGPU not supported (navigator.gpu is undefined).');
     return;
   }
 
-  let adapter;
-  try {
-    adapter = await navigator.gpu.requestAdapter({
-      powerPreference: "high-performance"
-    });
-  } catch (err) {
-    status.textContent = "Error requesting adapter: " + err;
-    return;
-  }
-
+  const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) {
-    status.textContent = "No GPU adapter available.";
-    return;
+    throw Error("Couldn't request WebGPU adapter.");
   }
 
-  status.textContent = "Adapter acquired.";
+  // =========================================================
+  // adapter.info  (your style)
+  // =========================================================
+  let adapterInfo = adapter.info;
 
-  // ======== adapter.requestAdapterInfo() (Chrome requires whitelist) ========
-  let info = {};
-  let infoCondition = "";
-  let infoType = "";
-  try {
-    if (typeof adapter.requestAdapterInfo === "function") {
-      info = await adapter.requestAdapterInfo([
+  // If adapter.info is not present, try requestAdapterInfo()
+  if (!adapterInfo && typeof adapter.requestAdapterInfo === 'function') {
+    try {
+      adapterInfo = await adapter.requestAdapterInfo([
         "vendor",
         "architecture",
         "device",
         "description"
       ]);
-      infoCondition = "Retrieved via requestAdapterInfo() with unmask hints";
-      infoType = typeof info;
-    } else {
-      infoCondition = "API not available";
-      infoType = "n/a";
-      info = "unavailable";
+    } catch (e) {
+      log('requestAdapterInfo() failed:', e);
     }
-  } catch (err) {
-    infoCondition = "Error calling requestAdapterInfo()";
-    infoType = "error";
-    info = String(err);
   }
-  addRow("adapter.info", infoCondition, infoType, JSON.stringify(info, null, 2));
 
-  // ======== adapter.features ========
-  const features = [...adapter.features];
-  addRow(
-    "adapter.features",
-    "GPUSupportedFeatures (iterable)",
-    typeof adapter.features,
-    JSON.stringify(features, null, 2)
-  );
-
-  // ======== adapter.limits ========
-  const limitsObj = {};
-  for (const k of Object.keys(adapter.limits)) {
-    limitsObj[k] = adapter.limits[k];
+  if (adapterInfo) {
+    log('=== adapter.info ===');
+    for (const [key, value] of Object.entries(adapterInfo)) {
+      log(`info.${key}:`, value);
+    }
+  } else {
+    log('adapter.info is not available');
   }
-  addRow(
-    "adapter.limits",
-    "GPUSupportedLimits",
-    typeof adapter.limits,
-    JSON.stringify(limitsObj, null, 2)
-  );
 
-  // ======== adapter.isFallbackAdapter ========
-  addRow(
-    "adapter.isFallbackAdapter",
-    "boolean",
-    typeof adapter.isFallbackAdapter,
-    String(adapter.isFallbackAdapter)
-  );
-
-  // ======== adapter.isCompatibilityMode ========
-  addRow(
-    "adapter.isCompatibilityMode",
-    "boolean",
-    typeof adapter.isCompatibilityMode,
-    String(adapter.isCompatibilityMode)
-  );
-
-  // ======== adapter.requestDevice ========
-  addRow(
-    "adapter.requestDevice",
-    "Creates a GPUDevice",
-    typeof adapter.requestDevice,
-    adapter.requestDevice.toString()
-  );
-
-  // ======== Reflection: list prototype methods ========
-  const protoKeys = Object.getOwnPropertyNames(Object.getPrototypeOf(adapter));
-  addRow(
-    "Prototype Keys",
-    "Methods + accessors on GPUAdapter",
-    "string[]",
-    JSON.stringify(protoKeys, null, 2)
-  );
-
-  // ======== Reflection: enumerate everything ========
-  const fullDump = {};
-  for (const k in adapter) {
-    fullDump[k] = adapter[k];
+  // =========================================================
+  // adapter.features
+  // =========================================================
+  log('\n=== adapter.features ===');
+  try {
+    for (const feature of adapter.features) {
+      log('feature:', feature);
+    }
+  } catch (e) {
+    log('Error reading adapter.features:', e);
   }
-  addRow(
-    "Full Adapter Enumeration",
-    "For debugging",
-    "object",
-    JSON.stringify(fullDump, null, 2)
-  );
 
-  status.textContent = "Done.";
+  // =========================================================
+  // adapter.limits
+  // =========================================================
+  log('\n=== adapter.limits ===');
+  try {
+    for (const key of Object.keys(adapter.limits)) {
+      log(`limit.${key}:`, adapter.limits[key]);
+    }
+  } catch (e) {
+    log('Error reading adapter.limits:', e);
+  }
 }
 
-run();
+main().catch(err => {
+  console.error(err);
+  const out = document.getElementById('out');
+  out.textContent += '\nERROR: ' + err;
+});
 </script>
-
 </body>
 </html>
