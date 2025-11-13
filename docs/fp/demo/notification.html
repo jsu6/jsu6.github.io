@@ -4,8 +4,9 @@
 <title>Notification API Fingerprinting Demo (Educational)</title>
 <body style="font-family:system-ui;padding:1rem;white-space:pre-wrap">
 <h2>Notification API Fingerprinting Demo</h2>
-<p>This script demonstrates how Notification features vary across browsers, OS, and permission models.
-It does not send or store any data. Click “Run Demo” to begin.</p>
+<p>This educational demo checks which Notification API features exist in your browser,
+counts how many return <b>true</b> or <b>false</b>, and shows the current permission state.
+No data leaves your device.</p>
 
 <button id="run">Run Demo</button>
 <pre id="out">Ready...</pre>
@@ -14,11 +15,10 @@ It does not send or store any data. Click “Run Demo” to begin.</p>
 const log = (...a) => out.textContent += a.join(' ') + '\n';
 
 document.getElementById('run').onclick = async () => {
-  out.textContent = ''; // clear log
+  out.textContent = '';
   log('[Notification API Inspection]');
-  log('Supported features and observed values:\n');
+  log('Checking feature support...\n');
 
-  // --- Feature detection ---
   const props = [
     'maxActions', 'permission', 'requestPermission',
     'actions', 'badge', 'body', 'dir', 'icon', 'image',
@@ -26,12 +26,21 @@ document.getElementById('run').onclick = async () => {
     'silent', 'tag', 'timestamp', 'title', 'vibrate'
   ];
 
-  props.forEach(p => {
-    const val = (p in Notification) ? Notification[p] : (p in Notification.prototype);
-    log(`${p}:`, val !== undefined ? val : 'not supported');
-  });
+  let trueCount = 0, falseCount = 0;
 
-  log('\n[Feature support differences]');
+  for (const p of props) {
+    const supported = (p in Notification) || (p in Notification.prototype);
+    log(`${p.padEnd(20)} : ${supported}`);
+    if (supported) trueCount++;
+    else falseCount++;
+  }
+
+  log('\n[Summary]');
+  log(`Supported (true): ${trueCount}`);
+  log(`Unsupported (false): ${falseCount}`);
+  log(`Total checked: ${props.length}\n`);
+
+  log('[Feature values]');
   log('maxActions =', Notification.maxActions);
   log('permission =', Notification.permission);
 
@@ -60,9 +69,8 @@ document.getElementById('run').onclick = async () => {
       timestamp: Date.now()
     });
 
-    // Listen for events
     n.onshow = () => log('[onshow] Notification displayed');
-    n.onclick = () => log('[onclick] User clicked notification');
+    n.onclick = () => log('[onclick] Notification clicked');
     n.onclose = () => log('[onclose] Notification closed');
     n.onerror = e => log('[onerror]', e.message);
   } else {
@@ -77,7 +85,7 @@ document.getElementById('run').onclick = async () => {
   log('Language direction support (dir):', 'dir' in Notification.prototype);
   log('Supports showTrigger (scheduled):', 'showTrigger' in Notification.prototype);
 
-  log('\nDemo complete. Compare results across browsers/OS to see differences.');
+  log('\nDemo complete. Compare true/false counts across browsers/OS to see feature differences.');
 };
 </script>
 </body>
