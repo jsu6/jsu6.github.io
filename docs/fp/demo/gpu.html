@@ -1,18 +1,348 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>GPU & User Agent Info</title>
-  <link rel="stylesheet" href="../styles.css">
-  <style>body{padding:1em;} pre{background:#f6f8fa;padding:1em;border:1px solid #ddd;border-radius:6px;}</style>
+  <title>WebGPU Fingerprinting PoC</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 2rem;
+      background: #f5f5f5;
+      color: #222;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.25rem;
+    }
+    #status {
+      margin-bottom: 1rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 4px;
+      background: #fff3cd;
+      border: 1px solid #ffeeba;
+      font-size: 0.9rem;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: #fff;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid #ddd;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    th {
+      background: #eee;
+      text-align: left;
+    }
+    tr:nth-child(even) {
+      background: #fafafa;
+    }
+    code {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.85rem;
+    }
+  </style>
 </head>
 <body>
-<h1>GPU & User Agent Fingerprinting</h1>
-<p>Shows WebGL renderer/vendor and browser’s userAgent string.</p>
-<div id="status" class="loading">Ready</div>
-<button id="refresh" data-collector="collect_gpu_and_useragent">Run Collector</button>
-<button id="copy">Copy JSON</button>
-<div id="output"></div>
-<script src="../fp.js"></script>
+  <h1>WebGPU Fingerprinting PoC</h1>
+  <div id="status">Initializing…</div>
+
+  <table id="results-table">
+    <thead>
+      <tr>
+        <th>API</th>
+        <th>Property</th>
+        <th>Condition</th>
+        <th>Type</th>
+        <th>Value (short)</th>
+      </tr>
+    </thead>
+    <tbody id="results-body">
+      <!-- Filled by JS -->
+    </tbody>
+  </table>
+
+  <script>
+    // Simple helper to append a row to the results table
+    function addRow(apiName, propLabel, condition, type, valuePreview) {
+      const tbody = document.getElementById("results-body");
+      const tr = document.createElement("tr");
+
+      const tdApi = document.createElement("td");
+      tdApi.textContent = apiName;
+
+      const tdProp = document.createElement("td");
+      tdProp.textContent = propLabel;
+
+      const tdCond = document.createElement("td");
+      tdCond.textContent = condition;
+      tdCond.style.whiteSpace = "nowrap";
+
+      const tdType = document.createElement("td");
+      tdType.textContent = type;
+
+      const tdVal = document.createElement("td");
+      tdVal.textContent = valuePreview;
+
+      tr.appendChild(tdApi);
+      tr.appendChild(tdProp);
+      tr.appendChild(tdCond);
+      tr.appendChild(tdType);
+      tr.appendChild(tdVal);
+      tbody.appendChild(tr);
+    }
+
+    function shortPreview(value) {
+      try {
+        if (value === undefined) return "undefined";
+        if (value === null) return "null";
+        if (typeof value === "string") {
+          return value.length > 40
+            ? value.slice(0, 37) + "..."
+            : value;
+        }
+        if (typeof value === "number" || typeof value === "boolean") {
+          return String(value);
+        }
+        if (value instanceof Set) {
+          return `Set(${value.size})`;
+        }
+        if (typeof value === "object") {
+          // Avoid huge dumps; show constructor and some keys
+          const ctor = value && value.constructor ? value.constructor.name : "Object";
+          const keys = Object.keys(value).slice(0, 4);
+          return `${ctor}{${keys.join(",")}${Object.keys(value).length > 4 ? ",..." : ""}}`;
+        }
+        if (typeof value === "function") {
+          return "function() {…}";
+        }
+        return typeof value;
+      } catch (e) {
+        return "error reading value";
+      }
+    }
+
+    async function main() {
+      const statusEl = document.getElementById("status");
+
+      if (!("gpu" in navigator)) {
+        statusEl.textContent = "navigator.gpu not available. WebGPU not supported or disabled.";
+        statusEl.style.background = "#f8d7da";
+        statusEl.style.borderColor = "#f5c2c7";
+        return;
+      }
+
+      statusEl.textContent = "Requesting WebGPU adapter and device…";
+
+      let adapter, device;
+      try {
+        adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          statusEl.textContent = "Failed to get GPU adapter.";
+          return;
+        }
+
+        device = await adapter.requestDevice();
+        if (!device) {
+          statusEl.textContent = "Failed to get GPU device.";
+          return;
+        }
+      } catch (err) {
+        statusEl.textContent = "Error requesting WebGPU device: " + err;
+        statusEl.style.background = "#f8d7da";
+        statusEl.style.borderColor = "#f5c2c7";
+        return;
+      }
+
+      statusEl.textContent = "WebGPU device acquired. Probing fingerprintable surface…";
+      statusEl.style.background = "#d1e7dd";
+      statusEl.style.borderColor = "#badbcc";
+
+      // --------------------------------------------------------------------
+      // 1. GPUDevice-level probes (presence + typeof)
+      // --------------------------------------------------------------------
+      const deviceTargets = [
+        "createSampler",
+        "createQuerySet",
+        "queue",
+        "createBindGroupLayout",
+        "limits",
+        "features",
+        "createShaderModule",
+        "createPipelineLayout",
+        "createCommandEncoder",
+        "createBindGroup",
+        "createComputePipelineAsync",
+        "createRenderPipelineAsync",
+        "createTexture",
+        "lost",
+        "importExternalTexture",
+        "createComputePipeline",
+        "createRenderBundleEncoder",
+        "createBuffer",
+        "createRenderPipeline",
+        "popErrorScope"
+      ];
+
+      for (const key of deviceTargets) {
+        const exists = key in device;
+        let type = "n/a";
+        let value = undefined;
+
+        if (exists) {
+          try {
+            value = device[key];
+            type = typeof value;
+          } catch (e) {
+            type = "error";
+          }
+        }
+
+        addRow("GPUDevice", key, exists ? "present" : "missing", type, shortPreview(value));
+      }
+
+      // --------------------------------------------------------------------
+      // 2. GPUDevice.features set (size, string content)
+      // --------------------------------------------------------------------
+      try {
+        if (device.features) {
+          const featuresArray = Array.from(device.features.values());
+          addRow(
+            "GPUDevice.features",
+            "size",
+            "present",
+            "number",
+            featuresArray.length
+          );
+          addRow(
+            "GPUDevice.features",
+            "values",
+            "present",
+            "string[]",
+            featuresArray.slice(0, 6).join(", ") +
+              (featuresArray.length > 6 ? ", ..." : "")
+          );
+        } else {
+          addRow("GPUDevice.features", "(overall)", "missing", "n/a", "");
+        }
+      } catch (e) {
+        addRow("GPUDevice.features", "error", "error", "error", String(e));
+      }
+
+      // --------------------------------------------------------------------
+      // 3. GPUDevice.limits (exact numbers differ per device/driver)
+      // --------------------------------------------------------------------
+      try {
+        if (device.limits) {
+          const limits = device.limits;
+          const limitKeys = Object.keys(limits);
+          addRow(
+            "GPUDevice.limits",
+            "keys",
+            "present",
+            "object",
+            limitKeys.slice(0, 8).join(", ") +
+              (limitKeys.length > 8 ? ", ..." : "")
+          );
+
+          // Show a few specific per-device numeric values
+          const interesting = [
+            "maxTextureDimension2D",
+            "maxBindGroups",
+            "maxComputeWorkgroupSizeX",
+            "maxComputeWorkgroupSizeY",
+            "maxComputeWorkgroupSizeZ",
+            "maxComputeInvocationsPerWorkgroup"
+          ];
+          for (const k of interesting) {
+            if (k in limits) {
+              addRow(
+                "GPUDevice.limits",
+                k,
+                "present",
+                typeof limits[k],
+                shortPreview(limits[k])
+              );
+            }
+          }
+        } else {
+          addRow("GPUDevice.limits", "(overall)", "missing", "n/a", "");
+        }
+      } catch (e) {
+        addRow("GPUDevice.limits", "error", "error", "error", String(e));
+      }
+
+      // --------------------------------------------------------------------
+      // 4. GPUDevice.queue basic probe
+      // --------------------------------------------------------------------
+      try {
+        const exists = "queue" in device;
+        addRow(
+          "GPUDevice.queue",
+          "exists",
+          exists ? "present" : "missing",
+          exists ? typeof device.queue : "n/a",
+          shortPreview(device.queue)
+        );
+      } catch (e) {
+        addRow("GPUDevice.queue", "error", "error", "error", String(e));
+      }
+
+      // --------------------------------------------------------------------
+      // 5. GPUDeviceLostInfo (reason / message) via device.lost
+      // --------------------------------------------------------------------
+      try {
+        if ("lost" in device && device.lost && typeof device.lost.then === "function") {
+          addRow("GPUDevice.lost", "promise", "present", typeof device.lost, "pending…");
+
+          // We don't wait for actual loss (which might never happen),
+          // but we can still inspect the prototype to get type info.
+          const proto = (window.GPUDeviceLostInfo && window.GPUDeviceLostInfo.prototype) || null;
+
+          if (proto) {
+            const reasonDescriptor = Object.getOwnPropertyDescriptor(proto, "reason");
+            const messageDescriptor = Object.getOwnPropertyDescriptor(proto, "message");
+
+            addRow(
+              "GPUDeviceLostInfo",
+              "reason",
+              reasonDescriptor ? "present" : "missing",
+              reasonDescriptor ? typeof reasonDescriptor.get : "unknown",
+              "getter"
+            );
+            addRow(
+              "GPUDeviceLostInfo",
+              "message",
+              messageDescriptor ? "present" : "missing",
+              messageDescriptor ? typeof messageDescriptor.get : "unknown",
+              "getter"
+            );
+          } else {
+            addRow(
+              "GPUDeviceLostInfo",
+              "(prototype)",
+              "missing",
+              "n/a",
+              "GPUDeviceLostInfo not exposed on window"
+            );
+          }
+        } else {
+          addRow("GPUDevice.lost", "promise", "missing", "n/a", "");
+        }
+      } catch (e) {
+        addRow("GPUDeviceLostInfo", "error", "error", "error", String(e));
+      }
+
+      // Note: In a real fingerprinting scenario, you would hash these values
+      // and combine them with other signals (canvas, audio, fonts, etc.).
+      // Here we only *display* them to demonstrate what is exposed.
+    }
+
+    main();
+  </script>
 </body>
 </html>
