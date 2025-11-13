@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>WebGPU Full Adapter Info</title>
+  <title>WebGPU Full Limits</title>
 </head>
 <body>
-  <h1>WebGPU Adapter Info / Features / Limits</h1>
+  <h1>WebGPU Adapter - All Info, Features, and Limits</h1>
   <pre id="output">Checking WebGPU...</pre>
 
   <script>
@@ -13,53 +13,62 @@
       const out = document.getElementById("output");
 
       if (!("gpu" in navigator)) {
-        out.textContent = "WebGPU not supported in this browser.";
+        out.textContent = "WebGPU not supported.";
         return;
       }
 
-      try {
-        const adapter = await navigator.gpu.requestAdapter({
-          powerPreference: "high-performance",
-        });
+      const adapter = await navigator.gpu.requestAdapter({
+        powerPreference: "high-performance",
+      });
 
-        if (!adapter) {
-          out.textContent = "No GPU adapter found.";
-          return;
-        }
-
-        // ---- 1. INFO ----
-        const infoObj = {};
-        for (const key in adapter.info) {
-          infoObj[key] = adapter.info[key] || "(hidden or empty)";
-        }
-
-        // ---- 2. FEATURES ----
-        const featuresArr = Array.from(adapter.features);
-
-        // ---- 3. LIMITS ----
-        const limitsObj = {};
-        for (const [key, value] of Object.entries(adapter.limits)) {
-          limitsObj[key] = value;
-        }
-
-        // Combine all output
-        const finalOutput = {
-          info: infoObj,
-          features: featuresArr,
-          limits: limitsObj,
-        };
-
-        out.textContent = JSON.stringify(finalOutput, null, 2);
-
-        // Also log in console
-        console.log("GPUAdapter Info:", adapter.info);
-        console.log("GPUAdapter Features:", featuresArr);
-        console.log("GPUAdapter Limits:", limitsObj);
-
-      } catch (err) {
-        out.textContent = "Error: " + err;
-        console.error(err);
+      if (!adapter) {
+        out.textContent = "No GPU adapter found.";
+        return;
       }
+
+      // ----------- INFO -----------
+      const info = {};
+      for (const key in adapter.info) {
+        info[key] = adapter.info[key] || "(hidden)";
+      }
+
+      // ----------- FEATURES -----------
+      const features = Array.from(adapter.features);
+
+      // ----------- LIMITS (Auto-extracted) -----------
+      const limits = {};
+      
+      // Get prototype where all WebIDL limit getters exist
+      const proto = Object.getPrototypeOf(adapter.limits);
+
+      // Find all properties with getters
+      const props = Object.getOwnPropertyNames(proto);
+
+      for (const p of props) {
+        const desc = Object.getOwnPropertyDescriptor(proto, p);
+        if (desc && typeof desc.get === "function") {
+          // Read limit value
+          limits[p] = adapter.limits[p];
+        }
+      }
+
+      // Sort limits alphabetically for readability
+      const sortedLimits = Object.fromEntries(
+        Object.entries(limits).sort((a, b) => a[0].localeCompare(b[0]))
+      );
+
+      // Output
+      const finalOutput = {
+        info,
+        features,
+        limits: sortedLimits
+      };
+
+      out.textContent = JSON.stringify(finalOutput, null, 2);
+
+      console.log("INFO:", info);
+      console.log("FEATURES:", features);
+      console.log("LIMITS:", sortedLimits);
     }
 
     document.addEventListener("DOMContentLoaded", init);
