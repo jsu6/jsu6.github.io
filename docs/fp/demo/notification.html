@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Notification API Fingerprinting Demo (Educational)</title>
+<body style="font-family:system-ui;padding:1rem;white-space:pre-wrap">
+<h2>Notification API Fingerprinting Demo</h2>
+<p>This script demonstrates how Notification features vary across browsers, OS, and permission models.
+It does not send or store any data. Click “Run Demo” to begin.</p>
+
+<button id="run">Run Demo</button>
+<pre id="out">Ready...</pre>
+
+<script>
+const log = (...a) => out.textContent += a.join(' ') + '\n';
+
+document.getElementById('run').onclick = async () => {
+  out.textContent = ''; // clear log
+  log('[Notification API Inspection]');
+  log('Supported features and observed values:\n');
+
+  // --- Feature detection ---
+  const props = [
+    'maxActions', 'permission', 'requestPermission',
+    'actions', 'badge', 'body', 'dir', 'icon', 'image',
+    'lang', 'renotify', 'requireInteraction', 'showTrigger',
+    'silent', 'tag', 'timestamp', 'title', 'vibrate'
+  ];
+
+  props.forEach(p => {
+    const val = (p in Notification) ? Notification[p] : (p in Notification.prototype);
+    log(`${p}:`, val !== undefined ? val : 'not supported');
+  });
+
+  log('\n[Feature support differences]');
+  log('maxActions =', Notification.maxActions);
+  log('permission =', Notification.permission);
+
+  // --- Permission behavior ---
+  if (Notification.permission !== 'granted') {
+    try {
+      const result = await Notification.requestPermission();
+      log('requestPermission() ->', result);
+    } catch(e) {
+      log('Permission request error:', e.message);
+    }
+  } else {
+    log('Already granted.');
+  }
+
+  // --- Create a local notification (no remote data) ---
+  if (Notification.permission === 'granted') {
+    const n = new Notification('Fingerprint Demo', {
+      body: 'Testing Notification rendering',
+      icon: 'https://via.placeholder.com/64',
+      image: 'https://via.placeholder.com/128',
+      tag: 'demoTag',
+      vibrate: [100,50,100],
+      requireInteraction: true,
+      renotify: true,
+      timestamp: Date.now()
+    });
+
+    // Listen for events
+    n.onshow = () => log('[onshow] Notification displayed');
+    n.onclick = () => log('[onclick] User clicked notification');
+    n.onclose = () => log('[onclose] Notification closed');
+    n.onerror = e => log('[onerror]', e.message);
+  } else {
+    log('Notification not shown because permission was not granted.');
+  }
+
+  // --- Environment-based variations ---
+  log('\n[Environment signals]');
+  log('navigator.platform:', navigator.platform);
+  log('navigator.userAgent:', navigator.userAgent);
+  log('Device vibration support:', 'vibrate' in Notification.prototype);
+  log('Language direction support (dir):', 'dir' in Notification.prototype);
+  log('Supports showTrigger (scheduled):', 'showTrigger' in Notification.prototype);
+
+  log('\nDemo complete. Compare results across browsers/OS to see differences.');
+};
+</script>
+</body>
+</html>
