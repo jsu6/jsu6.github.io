@@ -1,84 +1,78 @@
 <!doctype html>
 <html>
 <body>
-<button id="run">Run WebNN Fingerprint</button>
+<button id="run">run</button>
 <pre id="out"></pre>
 
 <script>
-const out = document.getElementById('out');
+const out = document.getElementById("out");
 
-function hash(arr) {
-  let h = 0|0;
-  for (let v of arr) {
-    const x = Math.fround(v * 1e7) | 0;
-    h = (h * 31 + x) | 0;
-  }
-  return (h >>> 0).toString(16).padStart(8, "0");
+function h(a) {
+  let x = 0;
+  for (let v of a) x = (x * 31 + Math.fround(v * 1e6)) | 0;
+  return (x >>> 0).toString(16);
 }
 
 async function run() {
+  out.textContent = "";
+
   if (!navigator.ml) {
-    out.textContent = "WebNN unavailable";
+    out.textContent = "WebNN unavailable.";
     return;
   }
 
   const ctx = await navigator.ml.createContext();
-  const builder = new MLGraphBuilder(ctx);
-
+  const b = new MLGraphBuilder(ctx);
   const results = {};
 
-  async function testOp(name, buildFn, dims=[1,8]) {
+  async function test(name, fn, shape=[1,8]) {
     try {
-      const desc = { dataType: "float32", dimensions: dims };
-      const input = builder.input("input", desc);
+      const desc = { dataType: "float32", shape };
+      const input = b.input("x", desc);
+      const size = shape.reduce((a,b)=>a*b, 1);
 
-      // deterministic input
-      const size = dims.reduce((a,b)=>a*b,1);
-      const inp = new Float32Array(size);
-      for (let i=0;i<size;i++) inp[i] = Math.sin(i*0.37);
+      const data = new Float32Array(size);
+      for (let i=0;i<size;i++) data[i] = Math.sin(i*0.31);
 
       const outBuf = new Float32Array(size);
 
-      const graphOut = buildFn(builder, input);
-      const graph = await builder.build({ output: graphOut });
+      const y = fn(b, input);
+      const graph = await b.build({ out: y });
 
       const t0 = performance.now();
-      await ctx.compute(graph, { input: inp }, { output: outBuf });
+      await ctx.compute(graph, { x: data }, { out: outBuf });
       const t1 = performance.now();
 
       results[name] = {
-        hash: hash(outBuf),
-        timeMs: +(t1 - t0).toFixed(4)
+        hash: h(outBuf),
+        time: +(t1 - t0).toFixed(4)
       };
     } catch (e) {
       results[name] = { error: e.message };
     }
   }
 
-  // ---------- ACTUAL OPS ----------
-  await testOp("relu", (b, x) => b.relu(x));
-  await testOp("sigmoid", (b, x) => b.sigmoid(x));
-  await testOp("tanh", (b, x) => b.tanh(x));
+  await test("relu", (b,x)=>b.relu(x));
+  await test("tanh", (b,x)=>b.tanh(x));
+  await test("sigmoid", (b,x)=>b.sigmoid(x));
 
-  // linear model (weights using valid descriptors)
-  await testOp("linear", (b, x) => {
-    const w = new Float32Array(64);
-    for (let i=0;i<w.length;i++) w[i] = Math.sin(i*0.11);
+  // linear: weightDesc must also use shape, not dimensions
+  await test("linear", (b,x)=>{
+    const W = new Float32Array(64);
+    for (let i=0;i<64;i++) W[i] = Math.sin(i*0.17);
 
-    const bias = new Float32Array(8);
-    const wDesc = { dataType: "float32", dimensions: [8, 8] };
-    const bDesc = { dataType: "float32", dimensions: [8] };
+    const weightDesc = { dataType:"float32", shape:[8,8] };
+    const biasDesc   = { dataType:"float32", shape:[8] };
 
-    const Wc = b.constant(w, wDesc);
-    const Bc = b.constant(bias, bDesc);
-
+    const Wc = b.constant(W, weightDesc);
+    const Bc = b.constant(new Float32Array(8), biasDesc);
     return b.linear(x, Wc, { bias: Bc });
   });
 
   out.textContent = JSON.stringify(results, null, 2);
 }
 
-document.getElementById('run').onclick = run;
+document.getElementById("run").onclick = run;
 </script>
 </body>
 </html>
