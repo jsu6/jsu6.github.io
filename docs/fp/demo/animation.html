@@ -25,7 +25,7 @@ A stable fingerprint implies consistent timing quantization &amp; scheduler char
 </p>
 
 <div>
-  <button id="runBtn">Run Stability Test (3 rounds)</button>
+  <button id="runBtn">Run Stability Test (10 rounds)</button>
   <button id="busyBtn">Inject 200 ms Main-Thread Jank</button>
   <span id="status" style="font-size:12px;margin-left:10px;">idle</span>
 </div>
@@ -52,7 +52,7 @@ busyBtn.onclick=()=>{const e=performance.now()+200;while(performance.now()<e){}}
 runBtn.onclick=async()=>{
   runBtn.disabled=true; outTBody.innerHTML=""; scoreEl.textContent=""; detail.textContent="";
   status.textContent="running…";
-  const rounds=3, hashes=[], metrics=[];
+  const rounds=10, hashes=[], metrics=[];
   for(let i=0;i<rounds;i++){
     const res=await measureOnce();
     hashes.push(res.hash); metrics.push(res);
