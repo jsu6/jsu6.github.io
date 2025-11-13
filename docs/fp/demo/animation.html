@@ -1,43 +1,46 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Animation API Fingerprinting — Direct Output</title>
+<title>Animation API Fingerprinting — Core Metrics</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:18px; max-width:1000px; }
-  h1 { font-size:20px; margin-bottom:6px; }
+  h1 { font-size:20px; margin-bottom:8px; }
   button { padding:8px 14px; margin:4px; border:1px solid #ccc; border-radius:6px; background:#fafafa; cursor:pointer; }
   table { border-collapse:collapse; width:100%; margin-top:10px; }
-  th,td { border:1px solid #ddd; padding:4px 6px; font-size:13px; vertical-align:top; }
+  th,td { border:1px solid #ddd; padding:5px 7px; font-size:13px; vertical-align:top; }
   th { background:#f5f5f5; text-align:left; }
-  pre { background:#f9f9f9; border:1px solid #ddd; padding:8px; overflow:auto; max-height:220px; }
-  #box { width:30px; height:30px; background:#69f; position:absolute; }
-  #preview { width:120px; height:30px; background:#eee; overflow:hidden; position:relative; margin-top:8px; }
+  .fp { background:#ffe9e9; }
+  #box { width:25px; height:25px; background:#69f; position:absolute; }
+  #preview { width:120px; height:25px; background:#eee; overflow:hidden; position:relative; margin-top:8px; }
+  pre { background:#f9f9f9; border:1px solid #ddd; padding:8px; overflow:auto; max-height:240px; }
 </style>
 
-<h1>Animation API Fingerprinting — Direct Output</h1>
+<h1>Animation API Fingerprinting — Core Metrics</h1>
 <p style="font-size:13px;color:#666">
-Runs 10 rounds of the Animation API and records the raw outputs from key animation properties and methods.  
-Differences across rounds or browsers may indicate fingerprintable timing behavior.
+Runs 10 rounds using <code>Animation</code> and <code>AnimationEffect</code> APIs.  
+Displays raw outputs for <b>startTime</b>, <b>updatePlaybackRate()</b>, <b>getTiming()</b>, <b>getComputedTiming()</b>,
+<b>updateTiming()</b>, and <b>timeline.getCurrentTime()</b>, plus mean frame delta and total duration.  
+Cells highlighted in pink (<span style="background:#ffe9e9"> </span>) mark metrics that can vary across devices/browsers and may be used for fingerprinting.
 </p>
 
 <div>
   <button id="runBtn">Run 10 Rounds</button>
   <span id="status" style="font-size:12px;margin-left:10px;">idle</span>
 </div>
-
 <div id="preview"><div id="box"></div></div>
 
 <table id="summary">
 <thead>
 <tr>
 <th>Round</th>
-<th>startTime</th>
+<th class="fp">startTime</th>
 <th>playbackRate (after update)</th>
 <th>getTiming().duration</th>
-<th>getComputedTiming().progress</th>
+<th class="fp">getComputedTiming().progress</th>
 <th>updateTiming() duration</th>
-<th>timeline.getCurrentTime()</th>
-<th>Worklet Registered</th>
+<th class="fp">timeline.getCurrentTime()</th>
+<th class="fp">mean Δ (ms)</th>
+<th class="fp">total time (ms)</th>
 </tr>
 </thead>
 <tbody></tbody>
@@ -63,75 +66,62 @@ runBtn.onclick=async()=>{
 };
 
 async function runOnce(i){
-  // Create animation
   const anim=box.animate(
     [{transform:'translateX(0px)'},{transform:`translateX(${100+i*5}px)`}],
-    {duration:800+Math.random()*200,easing:'ease-in-out'}
+    {duration:1000+Math.random()*150,easing:'ease-in-out'}
   );
-
-  const result={round:i};
   await anim.ready.catch(()=>{});
 
-  // Record startTime
-  result.startTime=anim.startTime;
+  const result={round:i};
 
-  // Update playback rate
-  const newRate=1+Math.random()*0.5;
+  // collect frame deltas to derive mean and total
+  const deltas=[],frames=100;let last;
+  await new Promise(r=>{
+    function tick(t){ if(last) deltas.push(t-last); last=t;
+      if(deltas.length<frames) requestAnimationFrame(tick); else r(); }
+    requestAnimationFrame(tick);
+  });
+  const mean=avg(deltas);
+  const total=deltas.reduce((a,b)=>a+b,0);
+
+  result.meanDelta=mean;
+  result.totalTime=total;
+
+  // record API outputs
+  result.startTime=anim.startTime;
+  const newRate=1+Math.random()*0.4;
   anim.updatePlaybackRate(newRate);
   result.playbackRate=anim.playbackRate;
 
-  // AnimationEffect methods
   const eff=anim.effect;
   result.getTiming=eff?.getTiming?.();
   result.getComputedTiming=eff?.getComputedTiming?.();
-
-  // Update timing randomly
-  const newDur=(result.getTiming?.duration||800)+Math.random()*150;
+  const newDur=(result.getTiming?.duration||800)+Math.random()*120;
   eff?.updateTiming?.({duration:newDur});
   result.updateTimingDuration=newDur;
 
-  // Timeline currentTime
-  let timelineNow=null;
-  try{
-    timelineNow=document.timeline.getCurrentTime?.() ?? document.timeline.currentTime;
-  }catch(e){timelineNow="error";}
-  result.timelineTime=timelineNow;
+  try{result.timelineTime=document.timeline.getCurrentTime?.() ?? document.timeline.currentTime;}
+  catch{result.timelineTime="error";}
 
-  // AnimationWorkletGlobalScope.registerAnimator test
-  let workletOk=false;
-  if(CSS && "animationWorklet" in CSS && "addModule" in CSS.animationWorklet && window.WorkletAnimation){
-    try{
-      const src=`registerAnimator('dummy',class{animate(){} });`;
-      const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
-      await CSS.animationWorklet.addModule(url);
-      workletOk=true;
-    }catch{ workletOk=false; }
-  }else{
-    workletOk="n/a";
-  }
-  result.workletRegistered=workletOk;
-
-  // Finish and cleanup
   try{await anim.finished;}catch{}
-  anim.commitStyles?.();
-  anim.cancel?.();
+  anim.commitStyles?.(); anim.cancel?.();
 
-  // Output
   detail.textContent=JSON.stringify(result,null,2);
   return result;
 }
 
-function addRow(i,res){
+function addRow(i,r){
   const tr=document.createElement("tr");
   tr.innerHTML=`
     <td>${i+1}</td>
-    <td>${fmt(res.startTime)}</td>
-    <td>${fmt(res.playbackRate)}</td>
-    <td>${fmt(res.getTiming?.duration)}</td>
-    <td>${fmt(res.getComputedTiming?.progress)}</td>
-    <td>${fmt(res.updateTimingDuration)}</td>
-    <td>${fmt(res.timelineTime)}</td>
-    <td>${fmt(res.workletRegistered)}</td>`;
+    <td class="fp">${fmt(r.startTime)}</td>
+    <td>${fmt(r.playbackRate)}</td>
+    <td>${fmt(r.getTiming?.duration)}</td>
+    <td class="fp">${fmt(r.getComputedTiming?.progress)}</td>
+    <td>${fmt(r.updateTimingDuration)}</td>
+    <td class="fp">${fmt(r.timelineTime)}</td>
+    <td class="fp">${fmt(r.meanDelta)}</td>
+    <td class="fp">${fmt(r.totalTime)}</td>`;
   tbody.appendChild(tr);
 }
 
@@ -141,5 +131,6 @@ function fmt(x){
   if(typeof x==="number") return x.toFixed(3);
   return String(x);
 }
+function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0;}
 })();
 </script>
