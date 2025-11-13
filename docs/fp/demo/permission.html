@@ -4,116 +4,105 @@
 <title>FileSystem / IdleDetector / Notification Fingerprinting Demo (Educational)</title>
 <body style="font-family:system-ui;padding:1rem;white-space:pre-wrap">
 <h2>Educational Fingerprinting Surface Demo</h2>
-<p>This demo only shows what information these APIs expose locally.  
-No network requests are made.</p>
+<p>This demo shows how APIs can expose local state or configuration differences.<br>
+Click <b>Run Demo</b> to test FileSystem and Notification APIs.<br>
+Use <b>Start IdleDetector</b> / <b>Stop IdleDetector</b> to see activity state changes.</p>
+
 <button id="run">Run Demo</button>
-<pre id="out">Click "Run Demo" to start...</pre>
+<button id="startIdle">Start IdleDetector</button>
+<button id="stopIdle">Stop IdleDetector</button>
+
+<pre id="out">Ready...</pre>
 
 <script>
 const log = (...a) => out.textContent += a.join(' ') + '\n';
 
+/* ---------- File System + Notification from before ---------- */
 document.getElementById('run').onclick = async () => {
-  out.textContent = ''; // clear
+  out.textContent = '';
 
-  /* ---------- File System Access API ---------- */
   if ('showOpenFilePicker' in window) {
     try {
-      const [handle] = await showOpenFilePicker(); // user selects file
+      const [handle] = await showOpenFilePicker();
       log('[FileSystemHandle]');
       log('name:', handle.name);
       log('kind:', handle.kind);
-
-      // Unique ID (differs per platform/browser)
-      if ('getUniqueId' in handle) {
-        const id = await handle.getUniqueId();
-        log('uniqueId:', id);
-      } else {
-        log('getUniqueId not supported');
-      }
-
-      // Permission queries
-      if ('queryPermission' in handle) {
-        const perm = await handle.queryPermission({mode: 'readwrite'});
-        log('queryPermission(readwrite):', perm);
-      }
-      if ('requestPermission' in handle) {
-        const perm2 = await handle.requestPermission({mode: 'readwrite'});
-        log('requestPermission(readwrite):', perm2);
-      }
-
-      // Attempt to get file info
-      if ('getFile' in handle) {
-        const file = await handle.getFile();
-        log('File info -> size:', file.size, 'type:', file.type, 'lastModified:', file.lastModified);
-      }
-
-      // Writable capability
-      if ('createWritable' in handle) {
-        const w = await handle.createWritable();
-        log('createWritable supported:', !!w);
-        await w.close();
-      }
-
-    } catch(e) { log('File System error:', e.message); }
+      if ('getUniqueId' in handle) log('uniqueId:', await handle.getUniqueId());
+      if ('queryPermission' in handle) log('queryPermission:', await handle.queryPermission({mode:'readwrite'}));
+      if ('requestPermission' in handle) log('requestPermission:', await handle.requestPermission({mode:'readwrite'}));
+      const f = await handle.getFile();
+      log('file:', f.name, f.type, f.size, f.lastModified);
+    } catch(e) { log('FileSystem error:', e.message); }
   } else {
-    log('File System Access API not supported in this browser.');
+    log('FileSystem Access API not supported.');
   }
 
   log('');
 
-  /* ---------- IdleDetector API ---------- */
-  if ('IdleDetector' in window) {
-    try {
-      log('[IdleDetector]');
-      const perm = await IdleDetector.requestPermission();
-      log('Permission:', perm);
-      if (perm === 'granted') {
-        const detector = new IdleDetector();
-        detector.addEventListener('change', () => {
-          log(`userState=${detector.userState}, screenState=${detector.screenState}`);
-        });
-        await detector.start();
-        log('IdleDetector started. Change your activity or lock screen to trigger updates.');
-      }
-    } catch(e) { log('IdleDetector error:', e.message); }
-  } else {
-    log('IdleDetector not supported.');
-  }
-
-  log('');
-
-  /* ---------- Notifications API ---------- */
   if ('Notification' in window) {
     log('[Notification]');
     log('maxActions:', Notification.maxActions);
     log('current permission:', Notification.permission);
-
-    // Request permission if needed
     if (Notification.permission !== 'granted') {
       const perm = await Notification.requestPermission();
       log('requestPermission() ->', perm);
     }
-
     if (Notification.permission === 'granted') {
-      const n = new Notification('Fingerprint Demo', {
-        body: 'Example notification body',
-        tag: 'demoTag',
-        timestamp: Date.now(),
-        vibrate: [100,50,100],
-        requireInteraction: false,
-      });
-      n.onclick = () => {
-        log('Notification clicked.');
-        n.close();
-      };
+      const n = new Notification('Demo', { body: 'Example body', tag: 'demoTag' });
       log('Notification shown with tag:', n.tag);
     }
-  } else {
-    log('Notification API not supported.');
+  } else log('Notification API not supported.');
+
+  log('');
+};
+
+/* ---------- Improved IdleDetector Section ---------- */
+let controller = null;
+
+const startButton = document.getElementById('startIdle');
+const stopButton = document.getElementById('stopIdle');
+
+startButton.addEventListener("click", async () => {
+  controller = new AbortController();
+  const signal = controller.signal;
+
+  if (!('IdleDetector' in window)) {
+    log('IdleDetector not supported.');
+    return;
   }
 
-  log('\nDemo finished. Check above for exposed attributes.');
-};
+  const perm = await IdleDetector.requestPermission();
+  if (perm !== "granted") {
+    log("Idle detection permission denied.");
+    return;
+  }
+
+  try {
+    const idleDetector = new IdleDetector();
+    idleDetector.addEventListener("change", () => {
+      const userState = idleDetector.userState;
+      const screenState = idleDetector.screenState;
+      log(`[IdleDetector] change: user=${userState}, screen=${screenState}`);
+    });
+
+    await idleDetector.start({
+      threshold: 60_000, // 1 minute idle threshold
+      signal,
+    });
+    log("IdleDetector is active. Move or lock screen to trigger changes.");
+  } catch (err) {
+    log("IdleDetector error:", err.name, err.message);
+  }
+});
+
+stopButton.addEventListener("click", () => {
+  if (controller) {
+    controller.abort();
+    log("IdleDetector stopped.");
+  } else {
+    log("No IdleDetector active.");
+  }
+});
 </script>
 </body>
 </html>
