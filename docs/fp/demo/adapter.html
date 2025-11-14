@@ -187,6 +187,44 @@ async function main() {
   addRow("COMPARE.limits.values", "same_value", "present", "array", limit_same_value.join(" | "));
 
 }
+  // ------------------------------------------------------------
+  // 8. GLOBAL COUNTERS SUMMARY
+  // ------------------------------------------------------------
+
+  const counters = {
+    total_adapter_features: adapterFeatures.length,
+    total_device_features: deviceFeatures.length,
+    features_only_in_adapter: feat_only_in_adapter.length,
+    features_only_in_device: feat_only_in_device.length,
+    features_in_both: feat_in_both.length,
+
+    total_adapter_limits: adapterLimitKeys.length,
+    total_device_limits: deviceLimitKeys.length,
+    limits_only_in_adapter: limit_only_in_adapter.length,
+    limits_only_in_device: limit_only_in_device.length,
+    limits_in_both: limit_in_both.length,
+
+    limit_values_differ: limit_value_differs.length,
+    limit_values_same: limit_same_value.length
+  };
+
+  // Add rows to table
+  addRow("COUNTERS", "adapter_features_total", "present", "number", counters.total_adapter_features);
+  addRow("COUNTERS", "device_features_total", "present", "number", counters.total_device_features);
+
+  addRow("COUNTERS", "features_only_in_adapter", "present", "number", counters.features_only_in_adapter);
+  addRow("COUNTERS", "features_only_in_device", "present", "number", counters.features_only_in_device);
+  addRow("COUNTERS", "features_in_both", "present", "number", counters.features_in_both);
+
+  addRow("COUNTERS", "adapter_limits_total", "present", "number", counters.total_adapter_limits);
+  addRow("COUNTERS", "device_limits_total", "present", "number", counters.total_device_limits);
+
+  addRow("COUNTERS", "limits_only_in_adapter", "present", "number", counters.limits_only_in_adapter);
+  addRow("COUNTERS", "limits_only_in_device", "present", "number", counters.limits_only_in_device);
+  addRow("COUNTERS", "limits_in_both", "present", "number", counters.limits_in_both);
+
+  addRow("COUNTERS", "limit_values_differ", "present", "number", counters.limit_values_differ);
+  addRow("COUNTERS", "limit_values_same", "present", "number", counters.limit_values_same);
 
 main();
 </script>
