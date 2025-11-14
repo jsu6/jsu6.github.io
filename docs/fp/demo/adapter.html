@@ -165,6 +165,27 @@ async function main() {
   addRow("COMPARE.limits", "keys_only_in_adapter", "present", "array", limit_only_in_adapter.join(", "));
   addRow("COMPARE.limits", "keys_only_in_device", "present", "array", limit_only_in_device.join(", "));
   addRow("COMPARE.limits", "keys_in_both", "present", "array", limit_in_both.join(", "));
+
+  // ------------------------------------------------------------
+  // 7. COMPARISON: limit values (adapter vs device)
+  // ------------------------------------------------------------
+
+  const limit_value_differs = [];
+  const limit_same_value = [];
+
+  for (const k of limit_in_both) {
+    const aVal = adapterLimits[k];
+    const dVal = deviceLimits[k];
+    if (aVal !== dVal) {
+      limit_value_differs.push(`${k}: adapter=${aVal}, device=${dVal}`);
+    } else {
+      limit_same_value.push(`${k}: ${aVal}`);
+    }
+  }
+
+  addRow("COMPARE.limits.values", "value_differs", "present", "array", limit_value_differs.join(" | "));
+  addRow("COMPARE.limits.values", "same_value", "present", "array", limit_same_value.join(" | "));
+
 }
 
 main();
