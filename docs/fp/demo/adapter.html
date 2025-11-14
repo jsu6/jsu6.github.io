@@ -1,76 +1,174 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>WebGPU Full Limits</title>
+  <meta charset="utf-8">
+  <title>WebGPU Fingerprinting PoC</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f5f5; color: #222; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    #status { margin-bottom: 1rem; padding: 0.5rem 0.75rem; border-radius: 4px;
+      background: #fff3cd; border: 1px solid #ffeeba; font-size: 0.9rem; }
+    table { border-collapse: collapse; width: 100%; background: #fff; border-radius: 6px; overflow: hidden; }
+    th, td { border-bottom: 1px solid #ddd; padding: 0.5rem 0.75rem; font-size: 0.9rem; }
+    th { background: #eee; text-align: left; }
+    tr:nth-child(even) { background: #fafafa; }
+    code { font-family: monospace; font-size: 0.85rem; }
+  </style>
 </head>
 <body>
-  <h1>WebGPU Adapter - All Info, Features, and Limits</h1>
-  <pre id="output">Checking WebGPU...</pre>
+  <h1>WebGPU Fingerprinting PoC</h1>
+  <div id="status">Initializing…</div>
 
-  <script>
-    async function init() {
-      const out = document.getElementById("output");
+  <table>
+    <thead>
+      <tr>
+        <th>API</th>
+        <th>Property</th>
+        <th>Condition</th>
+        <th>Type</th>
+        <th>Value (short)</th>
+      </tr>
+    </thead>
+    <tbody id="results-body"></tbody>
+  </table>
 
-      if (!("gpu" in navigator)) {
-        out.textContent = "WebGPU not supported.";
-        return;
-      }
+<script>
+function addRow(api, prop, cond, type, value) {
+  const tbody = document.getElementById("results-body");
+  const tr = document.createElement("tr");
 
-      const adapter = await navigator.gpu.requestAdapter({
-      });
+  const tdA = document.createElement("td"); tdA.textContent = api;
+  const tdP = document.createElement("td"); tdP.textContent = prop;
+  const tdC = document.createElement("td"); tdC.textContent = cond; tdC.style.whiteSpace='nowrap';
+  const tdT = document.createElement("td"); tdT.textContent = type;
+  const tdV = document.createElement("td"); tdV.textContent = value;
 
-      if (!adapter) {
-        out.textContent = "No GPU adapter found.";
-        return;
-      }
+  tr.append(tdA, tdP, tdC, tdT, tdV);
+  tbody.appendChild(tr);
+}
 
-      // ----------- INFO -----------
-      const info = {};
-      for (const key in adapter.info) {
-        info[key] = adapter.info[key] || "(hidden)";
-      }
+function shortPreview(val) {
+  if (val === null) return "null";
+  if (val === undefined) return "undefined";
+  if (typeof val === "string") return val.length > 40 ? val.slice(0,37)+"..." : val;
+  if (typeof val === "number" || typeof val === "boolean") return String(val);
+  return String(val);
+}
 
-      // ----------- FEATURES -----------
-      const features = Array.from(adapter.features);
+async function main() {
+  const status = document.getElementById("status");
 
-      // ----------- LIMITS (Auto-extracted) -----------
-      const limits = {};
-      
-      // Get prototype where all WebIDL limit getters exist
-      const proto = Object.getPrototypeOf(adapter.limits);
+  if (!("gpu" in navigator)) {
+    status.textContent = "WebGPU not supported.";
+    return;
+  }
 
-      // Find all properties with getters
-      const props = Object.getOwnPropertyNames(proto);
+  status.textContent = "Requesting adapter/device…";
 
-      for (const p of props) {
-        const desc = Object.getOwnPropertyDescriptor(proto, p);
-        if (desc && typeof desc.get === "function") {
-          // Read limit value
-          limits[p] = adapter.limits[p];
-        }
-      }
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    status.textContent = "No adapter found.";
+    return;
+  }
 
-      // Sort limits alphabetically for readability
-      const sortedLimits = Object.fromEntries(
-        Object.entries(limits).sort((a, b) => a[0].localeCompare(b[0]))
-      );
+  const device = await adapter.requestDevice();
+  if (!device) {
+    status.textContent = "Device failed.";
+    return;
+  }
 
-      // Output
-      const finalOutput = {
-        info,
-        features,
-        limits: sortedLimits
-      };
+  status.textContent = "Adapter & device acquired.";
 
-      out.textContent = JSON.stringify(finalOutput, null, 2);
+  // ------------------------------------------------------------
+  // 1. Extract adapter.features (simple flat array)
+  // ------------------------------------------------------------
+  const adapterFeatures = Array.from(adapter.features).sort();
 
-      console.log("INFO:", info);
-      console.log("FEATURES:", features);
-      console.log("LIMITS:", sortedLimits);
+  addRow("GPUAdapter.features", "count", "present", "number", adapterFeatures.length);
+  for (const f of adapterFeatures) {
+    addRow("GPUAdapter.features", f, "present", "string", f);
+  }
+
+  // ------------------------------------------------------------
+  // 2. Extract adapter.limits using WebIDL getter enumeration
+  // ------------------------------------------------------------
+  const adapterLimitProto = Object.getPrototypeOf(adapter.limits);
+  const adapterLimitProps = Object.getOwnPropertyNames(adapterLimitProto);
+
+  const adapterLimits = {};
+  for (const p of adapterLimitProps) {
+    const desc = Object.getOwnPropertyDescriptor(adapterLimitProto, p);
+    if (desc && typeof desc.get === "function") {
+      try { adapterLimits[p] = adapter.limits[p]; } catch {}
     }
+  }
 
-    document.addEventListener("DOMContentLoaded", init);
-  </script>
+  const sortedAdapterLimits = Object.keys(adapterLimits).sort();
+
+  addRow("GPUAdapter.limits", "count", "present", "number", sortedAdapterLimits.length);
+  for (const k of sortedAdapterLimits) {
+    addRow("GPUAdapter.limits", k, "present", typeof adapterLimits[k], shortPreview(adapterLimits[k]));
+  }
+
+  // ------------------------------------------------------------
+  // 3. Extract device.features
+  // ------------------------------------------------------------
+  const deviceFeatures = Array.from(device.features).sort();
+
+  addRow("GPUDevice.features", "count", "present", "number", deviceFeatures.length);
+  for (const f of deviceFeatures) {
+    addRow("GPUDevice.features", f, "present", "string", f);
+  }
+
+  // ------------------------------------------------------------
+  // 4. Extract device.limits (same getter method)
+  // ------------------------------------------------------------
+  const deviceLimitProto = Object.getPrototypeOf(device.limits);
+  const deviceLimitProps = Object.getOwnPropertyNames(deviceLimitProto);
+
+  const deviceLimits = {};
+  for (const p of deviceLimitProps) {
+    const desc = Object.getOwnPropertyDescriptor(deviceLimitProto, p);
+    if (desc && typeof desc.get === "function") {
+      try { deviceLimits[p] = device.limits[p]; } catch {}
+    }
+  }
+
+  const sortedDeviceLimits = Object.keys(deviceLimits).sort();
+
+  addRow("GPUDevice.limits", "count", "present", "number", sortedDeviceLimits.length);
+  for (const k of sortedDeviceLimits) {
+    addRow("GPUDevice.limits", k, "present", typeof deviceLimits[k], shortPreview(deviceLimits[k]));
+  }
+
+  // ------------------------------------------------------------
+  // 5. COMPARISON: features (adapter vs device)
+  // ------------------------------------------------------------
+  const feat_only_in_adapter = adapterFeatures.filter(f => !deviceFeatures.includes(f));
+  const feat_only_in_device  = deviceFeatures.filter(f => !adapterFeatures.includes(f));
+  const feat_in_both = adapterFeatures.filter(f => deviceFeatures.includes(f));
+
+  addRow("COMPARE.features", "only_in_adapter", "present", "array", feat_only_in_adapter.join(", "));
+  addRow("COMPARE.features", "only_in_device", "present", "array", feat_only_in_device.join(", "));
+  addRow("COMPARE.features", "in_both", "present", "array", feat_in_both.join(", "));
+
+  // ------------------------------------------------------------
+  // 6. COMPARISON: limits (keys only)
+  // ------------------------------------------------------------
+  const adapterLimitKeys = sortedAdapterLimits;
+  const deviceLimitKeys = sortedDeviceLimits;
+
+  const limit_only_in_adapter = adapterLimitKeys.filter(k => !deviceLimitKeys.includes(k));
+  const limit_only_in_device  = deviceLimitKeys.filter(k => !adapterLimitKeys.includes(k));
+  const limit_in_both = adapterLimitKeys.filter(k => deviceLimitKeys.includes(k));
+
+  addRow("COMPARE.limits", "keys_only_in_adapter", "present", "array", limit_only_in_adapter.join(", "));
+  addRow("COMPARE.limits", "keys_only_in_device", "present", "array", limit_only_in_device.join(", "));
+  addRow("COMPARE.limits", "keys_in_both", "present", "array", limit_in_both.join(", "));
+}
+
+main();
+</script>
+
 </body>
 </html>
