@@ -185,8 +185,6 @@ async function main() {
 
   addRow("COMPARE.limits.values", "value_differs", "present", "array", limit_value_differs.join(" | "));
   addRow("COMPARE.limits.values", "same_value", "present", "array", limit_same_value.join(" | "));
-
-}
   // ------------------------------------------------------------
   // 8. GLOBAL COUNTERS SUMMARY
   // ------------------------------------------------------------
@@ -225,6 +223,8 @@ async function main() {
 
   addRow("COUNTERS", "limit_values_differ", "present", "number", counters.limit_values_differ);
   addRow("COUNTERS", "limit_values_same", "present", "number", counters.limit_values_same);
+}
+  
 
 main();
 </script>
