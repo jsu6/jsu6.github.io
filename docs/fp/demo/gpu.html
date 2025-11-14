@@ -61,13 +61,10 @@
         <th>Value (short)</th>
       </tr>
     </thead>
-    <tbody id="results-body">
-      <!-- Filled by JS -->
-    </tbody>
+    <tbody id="results-body"></tbody>
   </table>
 
   <script>
-    // Simple helper to append a row to the results table
     function addRow(apiName, propLabel, condition, type, valuePreview) {
       const tbody = document.getElementById("results-body");
       const tr = document.createElement("tr");
@@ -100,28 +97,17 @@
       try {
         if (value === undefined) return "undefined";
         if (value === null) return "null";
-        if (typeof value === "string") {
-          return value.length > 40
-            ? value.slice(0, 37) + "..."
-            : value;
-        }
-        if (typeof value === "number" || typeof value === "boolean") {
-          return String(value);
-        }
-        if (value instanceof Set) {
-          return `Set(${value.size})`;
-        }
+        if (typeof value === "string") return value.length > 40 ? value.slice(0, 37) + "..." : value;
+        if (typeof value === "number" || typeof value === "boolean") return String(value);
+        if (value instanceof Set) return `Set(${value.size})`;
         if (typeof value === "object") {
-          // Avoid huge dumps; show constructor and some keys
-          const ctor = value && value.constructor ? value.constructor.name : "Object";
+          const ctor = value?.constructor?.name ?? "Object";
           const keys = Object.keys(value).slice(0, 4);
           return `${ctor}{${keys.join(",")}${Object.keys(value).length > 4 ? ",..." : ""}}`;
         }
-        if (typeof value === "function") {
-          return "function() {…}";
-        }
+        if (typeof value === "function") return "function() {…}";
         return typeof value;
-      } catch (e) {
+      } catch {
         return "error reading value";
       }
     }
@@ -141,12 +127,7 @@
       let adapter, device;
       try {
         adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-          statusEl.textContent = "Failed to get GPU adapter.";
-          return;
-        }
-
-        device = await adapter.requestDevice();
+        device = adapter && await adapter.requestDevice();
         if (!device) {
           statusEl.textContent = "Failed to get GPU device.";
           return;
@@ -163,7 +144,7 @@
       statusEl.style.borderColor = "#badbcc";
 
       // --------------------------------------------------------------------
-      // 1. GPUDevice-level probes (presence + typeof)
+      // 1. GPUDevice-level presence & typeof
       // --------------------------------------------------------------------
       const deviceTargets = [
         "createSampler",
@@ -192,7 +173,6 @@
         const exists = key in device;
         let type = "n/a";
         let value = undefined;
-
         if (exists) {
           try {
             value = device[key];
@@ -201,31 +181,21 @@
             type = "error";
           }
         }
-
         addRow("GPUDevice", key, exists ? "present" : "missing", type, shortPreview(value));
       }
 
       // --------------------------------------------------------------------
-      // 2. GPUDevice.features set (size, string content)
+      // 2. GPUDevice.features (all features)
       // --------------------------------------------------------------------
       try {
         if (device.features) {
-          const featuresArray = Array.from(device.features.values());
-          addRow(
-            "GPUDevice.features",
-            "size",
-            "present",
-            "number",
-            featuresArray.length
-          );
-          addRow(
-            "GPUDevice.features",
-            "values",
-            "present",
-            "string[]",
-            featuresArray.slice(0, 6).join(", ") +
-              (featuresArray.length > 6 ? ", ..." : "")
-          );
+          const features = [...device.features].sort();
+
+          addRow("GPUDevice.features", "count", "present", "number", String(features.length));
+
+          for (const feature of features) {
+            addRow("GPUDevice.features", feature, "present", "string", feature);
+          }
         } else {
           addRow("GPUDevice.features", "(overall)", "missing", "n/a", "");
         }
@@ -234,78 +204,33 @@
       }
 
       // --------------------------------------------------------------------
-      // 3. GPUDevice.limits (exact numbers differ per device/driver)
+      // 3. GPUDevice.limits (all values)
       // --------------------------------------------------------------------
-try {
-  //
-  // --- GPUDevice.limits ---
-  //
-  if (device.limits) {
-    const limits = device.limits;
-    const limitKeys = Object.keys(limits).sort();
+      try {
+        if (device.limits) {
+          const limits = device.limits;
+          const limitKeys = Object.keys(limits).sort();
 
-    // Summary row
-    addRow(
-      "GPUDevice.limits",
-      "keys",
-      "present",
-      "object",
-      limitKeys.slice(0, 8).join(", ") +
-        (limitKeys.length > 8 ? ", ..." : "")
-    );
+          addRow("GPUDevice.limits", "count", "present", "number", String(limitKeys.length));
 
-    // Every limit
-    for (const key of limitKeys) {
-      const value = limits[key];
-      addRow(
-        "GPUDevice.limits",
-        key,
-        "present",
-        typeof value,
-        shortPreview(value)
-      );
-    }
-  } else {
-    addRow("GPUDevice.limits", "(overall)", "missing", "n/a", "");
-  }
-
-  //
-  // --- GPUDevice.features ---
-  //
-  if (device.features) {
-    const features = [...device.features].sort();
-
-    // Summary row
-    addRow(
-      "GPUDevice.features",
-      "keys",
-      "present",
-      "set",
-      features.slice(0, 8).join(", ") +
-        (features.length > 8 ? ", ..." : "")
-    );
-
-    // Every feature
-    for (const feature of features) {
-      addRow(
-        "GPUDevice.features",
-        feature,
-        "present",
-        "string",
-        shortPreview(feature)
-      );
-    }
-  } else {
-    addRow("GPUDevice.features", "(overall)", "missing", "n/a", "");
-  }
-
-} catch (e) {
-  addRow("GPUDevice", "error", "error", "error", String(e));
-}
-
+          for (const key of limitKeys) {
+            addRow(
+              "GPUDevice.limits",
+              key,
+              "present",
+              typeof limits[key],
+              shortPreview(limits[key])
+            );
+          }
+        } else {
+          addRow("GPUDevice.limits", "(overall)", "missing", "n/a", "");
+        }
+      } catch (e) {
+        addRow("GPUDevice.limits", "error", "error", "error", String(e));
+      }
 
       // --------------------------------------------------------------------
-      // 4. GPUDevice.queue basic probe
+      // 4. GPUDevice.queue probe
       // --------------------------------------------------------------------
       try {
         const exists = "queue" in device;
@@ -321,42 +246,23 @@ try {
       }
 
       // --------------------------------------------------------------------
-      // 5. GPUDeviceLostInfo (reason / message) via device.lost
+      // 5. GPUDeviceLostInfo probe
       // --------------------------------------------------------------------
       try {
-        if ("lost" in device && device.lost && typeof device.lost.then === "function") {
+        if ("lost" in device && device.lost?.then) {
           addRow("GPUDevice.lost", "promise", "present", typeof device.lost, "pending…");
 
-          // We don't wait for actual loss (which might never happen),
-          // but we can still inspect the prototype to get type info.
-          const proto = (window.GPUDeviceLostInfo && window.GPUDeviceLostInfo.prototype) || null;
-
+          const proto = window.GPUDeviceLostInfo?.prototype ?? null;
           if (proto) {
             const reasonDescriptor = Object.getOwnPropertyDescriptor(proto, "reason");
             const messageDescriptor = Object.getOwnPropertyDescriptor(proto, "message");
 
-            addRow(
-              "GPUDeviceLostInfo",
-              "reason",
-              reasonDescriptor ? "present" : "missing",
-              reasonDescriptor ? typeof reasonDescriptor.get : "unknown",
-              "getter"
-            );
-            addRow(
-              "GPUDeviceLostInfo",
-              "message",
-              messageDescriptor ? "present" : "missing",
-              messageDescriptor ? typeof messageDescriptor.get : "unknown",
-              "getter"
-            );
+            addRow("GPUDeviceLostInfo", "reason", reasonDescriptor ? "present" : "missing",
+                   reasonDescriptor ? typeof reasonDescriptor.get : "unknown", "getter");
+            addRow("GPUDeviceLostInfo", "message", messageDescriptor ? "present" : "missing",
+                   messageDescriptor ? typeof messageDescriptor.get : "unknown", "getter");
           } else {
-            addRow(
-              "GPUDeviceLostInfo",
-              "(prototype)",
-              "missing",
-              "n/a",
-              "GPUDeviceLostInfo not exposed on window"
-            );
+            addRow("GPUDeviceLostInfo", "(prototype)", "missing", "n/a", "Not exposed");
           }
         } else {
           addRow("GPUDevice.lost", "promise", "missing", "n/a", "");
@@ -364,10 +270,6 @@ try {
       } catch (e) {
         addRow("GPUDeviceLostInfo", "error", "error", "error", String(e));
       }
-
-      // Note: In a real fingerprinting scenario, you would hash these values
-      // and combine them with other signals (canvas, audio, fonts, etc.).
-      // Here we only *display* them to demonstrate what is exposed.
     }
 
     main();
