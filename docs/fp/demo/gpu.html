@@ -236,45 +236,73 @@
       // --------------------------------------------------------------------
       // 3. GPUDevice.limits (exact numbers differ per device/driver)
       // --------------------------------------------------------------------
-      try {
-        if (device.limits) {
-          const limits = device.limits;
-          const limitKeys = Object.keys(limits);
-          addRow(
-            "GPUDevice.limits",
-            "keys",
-            "present",
-            "object",
-            limitKeys.slice(0, 8).join(", ") +
-              (limitKeys.length > 8 ? ", ..." : "")
-          );
+try {
+  //
+  // --- GPUDevice.limits ---
+  //
+  if (device.limits) {
+    const limits = device.limits;
+    const limitKeys = Object.keys(limits).sort();
 
-          // Show a few specific per-device numeric values
-          const interesting = [
-            "maxTextureDimension2D",
-            "maxBindGroups",
-            "maxComputeWorkgroupSizeX",
-            "maxComputeWorkgroupSizeY",
-            "maxComputeWorkgroupSizeZ",
-            "maxComputeInvocationsPerWorkgroup"
-          ];
-          for (const k of interesting) {
-            if (k in limits) {
-              addRow(
-                "GPUDevice.limits",
-                k,
-                "present",
-                typeof limits[k],
-                shortPreview(limits[k])
-              );
-            }
-          }
-        } else {
-          addRow("GPUDevice.limits", "(overall)", "missing", "n/a", "");
-        }
-      } catch (e) {
-        addRow("GPUDevice.limits", "error", "error", "error", String(e));
-      }
+    // Summary row
+    addRow(
+      "GPUDevice.limits",
+      "keys",
+      "present",
+      "object",
+      limitKeys.slice(0, 8).join(", ") +
+        (limitKeys.length > 8 ? ", ..." : "")
+    );
+
+    // Every limit
+    for (const key of limitKeys) {
+      const value = limits[key];
+      addRow(
+        "GPUDevice.limits",
+        key,
+        "present",
+        typeof value,
+        shortPreview(value)
+      );
+    }
+  } else {
+    addRow("GPUDevice.limits", "(overall)", "missing", "n/a", "");
+  }
+
+  //
+  // --- GPUDevice.features ---
+  //
+  if (device.features) {
+    const features = [...device.features].sort();
+
+    // Summary row
+    addRow(
+      "GPUDevice.features",
+      "keys",
+      "present",
+      "set",
+      features.slice(0, 8).join(", ") +
+        (features.length > 8 ? ", ..." : "")
+    );
+
+    // Every feature
+    for (const feature of features) {
+      addRow(
+        "GPUDevice.features",
+        feature,
+        "present",
+        "string",
+        shortPreview(feature)
+      );
+    }
+  } else {
+    addRow("GPUDevice.features", "(overall)", "missing", "n/a", "");
+  }
+
+} catch (e) {
+  addRow("GPUDevice", "error", "error", "error", String(e));
+}
+
 
       // --------------------------------------------------------------------
       // 4. GPUDevice.queue basic probe
