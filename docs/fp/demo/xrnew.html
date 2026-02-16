@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>XR-Only Fingerprint</title>
+<title>Robust XR Fingerprint</title>
 <style>
 body { background:#111; color:#0f0; font-family:monospace; padding:20px; }
 pre { white-space:pre-wrap; }
@@ -11,22 +11,20 @@ button { margin-bottom:10px; }
 </head>
 <body>
 
-<h2>XR-Only Fingerprint (Desktop Compatible)</h2>
+<h2>Robust XR-Only Fingerprint</h2>
 <button id="run">Generate XR Fingerprint</button>
 <pre id="output"></pre>
 
 <script>
 const output = document.getElementById("output");
 
-function log(msg) {
-  output.textContent += msg + "\n";
-}
+function log(msg){ output.textContent += msg + "\n"; }
 
-function hash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++)
-    h = Math.imul(31, h) + str.charCodeAt(i) | 0;
-  return (h >>> 0).toString(16);
+function hash(str){
+  let h=0;
+  for(let i=0;i<str.length;i++)
+    h = Math.imul(31,h)+str.charCodeAt(i)|0;
+  return (h>>>0).toString(16);
 }
 
 document.getElementById("run").onclick = async () => {
@@ -38,102 +36,98 @@ document.getElementById("run").onclick = async () => {
     return;
   }
 
-  const fingerprint = [];
+  const fp = [];
 
-  // Session support surface
-  const modes = ["inline", "immersive-vr", "immersive-ar"];
+  //  Session mode support surface
+  const modes = ["inline","immersive-vr","immersive-ar"];
   for (const mode of modes) {
     try {
       const supported = await navigator.xr.isSessionSupported(mode);
-      fingerprint.push("mode:" + mode + ":" + supported);
+      fp.push("mode:"+mode+":"+supported);
     } catch {
-      fingerprint.push("mode:" + mode + ":error");
+      fp.push("mode:"+mode+":error");
     }
   }
 
-  const inlineSupported = await navigator.xr.isSessionSupported("inline");
-  if (!inlineSupported) {
-    log("Inline XR not supported.");
+  //  XR constructor surface
+  const xrProps = Object.getOwnPropertyNames(Object.getPrototypeOf(navigator.xr));
+  fp.push("xrProtoProps:"+xrProps.sort().join(","));
+
+  //  XRRigidTransform math precision
+  const t = new XRRigidTransform({x:1.1234567,y:2.7654321,z:3.3333333});
+  const inv = t.inverse;
+  fp.push("inverseExists:"+!!inv);
+  if (inv) {
+    const sample = Array.from(inv.matrix).slice(0,6).map(v=>v.toFixed(7));
+    fp.push("invMatrixSample:"+sample.join(","));
+  }
+
+  //  Attempt inline session
+  let session = null;
+  try {
+    session = await navigator.xr.requestSession("inline");
+    fp.push("inlineSession:true");
+  } catch {
+    fp.push("inlineSession:false");
+  }
+
+  if (!session) {
+    finalize();
     return;
   }
 
-  const session = await navigator.xr.requestSession("inline");
+  //  Session prototype surface
+  const sessionProps = Object.getOwnPropertyNames(Object.getPrototypeOf(session));
+  fp.push("sessionProto:"+sessionProps.sort().join(","));
 
-  // Input source baseline
-  fingerprint.push("initialInputSources:" + session.inputSources.length);
+  //  Input sources baseline
+  fp.push("inputSourceCount:"+session.inputSources.length);
 
-  // Reference space probing
-  const refTypes = ["viewer", "local", "local-floor", "bounded-floor"];
+  //  Reference space probing
+  const refTypes = ["viewer","local","local-floor","bounded-floor"];
   for (const type of refTypes) {
     try {
       await session.requestReferenceSpace(type);
-      fingerprint.push("refSpace:" + type + ":true");
+      fp.push("refSpace:"+type+":true");
     } catch {
-      fingerprint.push("refSpace:" + type + ":false");
+      fp.push("refSpace:"+type+":false");
     }
   }
 
-  const refSpace = await session.requestReferenceSpace("viewer");
+  //  Frame timing probe (safe timeout fallback)
+  let frameCaptured = false;
+  let start = performance.now();
 
-  let frameCount = 0;
-  const frameTimes = [];
-
-  session.requestAnimationFrame(function onFrame(time, frame) {
-
-    frameCount++;
-    frameTimes.push(time);
-
-    const pose = frame.getViewerPose(refSpace);
-
-    if (pose) {
-
-      // View count
-      fingerprint.push("viewCount:" + pose.views.length);
-
-      const view = pose.views[0];
-
-      // Projection matrix precision sample
-      const proj = Array.from(view.projectionMatrix).slice(0, 8);
-      fingerprint.push("proj:" + proj.map(v => v.toFixed(5)).join(","));
-
-      // Transform precision test
-      const t = new XRRigidTransform();
-      const inv = t.inverse;
-      fingerprint.push("inverseExists:" + !!inv);
-
-      if (inv) {
-        fingerprint.push("invMatrixSample:" +
-          Array.from(inv.matrix).slice(0,4).map(v => v.toFixed(5)).join(","));
-      }
+  const timeout = setTimeout(()=>{
+    if (!frameCaptured) {
+      fp.push("frameCallback:false");
+      finalize();
     }
+  }, 1500);
 
-    if (frameCount < 6) {
-      session.requestAnimationFrame(onFrame);
-    } else {
+  session.requestAnimationFrame((time, frame)=>{
+    frameCaptured = true;
+    clearTimeout(timeout);
 
-      // Frame interval analysis
-      const deltas = [];
-      for (let i = 1; i < frameTimes.length; i++) {
-        deltas.push((frameTimes[i] - frameTimes[i-1]).toFixed(3));
-      }
+    fp.push("frameCallback:true");
+    fp.push("frameTimeDelta:"+(time-start).toFixed(3));
 
-      fingerprint.push("frameDeltas:" + deltas.join(","));
-
-      const material = fingerprint.join("|");
-      const finalHash = hash(material);
-
-      log("=== XR Fingerprint Material ===");
-      log(material);
-
-      log("\n=== XR Fingerprint Hash ===");
-      log(finalHash);
-
-      session.end();
-    }
+    finalize();
   });
+
+  function finalize(){
+    if (session) session.end();
+    const material = fp.join("|");
+    const finalHash = hash(material);
+
+    log("=== XR Fingerprint Material ===");
+    log(material);
+
+    log("\n=== XR Fingerprint Hash ===");
+    log(finalHash);
+  }
 };
 </script>
-
 </body>
 </html>
 
