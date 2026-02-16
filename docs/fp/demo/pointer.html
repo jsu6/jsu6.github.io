@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>PointerEvent Advanced Properties Demo</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 20px;
+  }
+
+  #canvas {
+    width: 600px;
+    height: 400px;
+    border: 2px solid #333;
+    touch-action: none;
+    position: relative;
+  }
+
+  #log {
+    margin-top: 20px;
+    background: #f4f4f4;
+    padding: 10px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    height: 250px;
+    overflow: auto;
+  }
+</style>
+</head>
+<body>
+
+<h2>PointerEvent Advanced Property Monitor</h2>
+<p>
+Interact inside the box using mouse, touch, or stylus.
+Stylus hardware exposes the richest data.
+</p>
+
+<div id="canvas"></div>
+
+<h3>Live Pointer Data</h3>
+<div id="log">Waiting for input...</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const log = document.getElementById("log");
+
+function formatNumber(value) {
+  if (value === undefined) return "unsupported";
+  if (value === null) return "null";
+  if (typeof value === "number") return value.toFixed(6);
+  return value;
+}
+
+function handlePointerEvent(event) {
+  const data = {
+    pointerType: event.pointerType,
+    pointerId: event.pointerId,
+    altitudeAngle: formatNumber(event.altitudeAngle),
+    azimuthAngle: formatNumber(event.azimuthAngle),
+    tangentialPressure: formatNumber(event.tangentialPressure),
+    twist: formatNumber(event.twist),
+    pressure: formatNumber(event.pressure),
+    tiltX: formatNumber(event.tiltX),
+    tiltY: formatNumber(event.tiltY),
+    clientX: event.clientX,
+    clientY: event.clientY
+  };
+
+  log.textContent = JSON.stringify(data, null, 2);
+}
+
+canvas.addEventListener("pointerdown", handlePointerEvent);
+canvas.addEventListener("pointermove", handlePointerEvent);
+canvas.addEventListener("pointerup", handlePointerEvent);
+canvas.addEventListener("pointercancel", handlePointerEvent);
+</script>
+
+</body>
+</html>
+
