@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Adaptive WebXR Fingerprint</title>
+<title>XR-Only Fingerprint</title>
 <style>
 body { background:#111; color:#0f0; font-family:monospace; padding:20px; }
 pre { white-space:pre-wrap; }
@@ -11,8 +11,8 @@ button { margin-bottom:10px; }
 </head>
 <body>
 
-<h2>Adaptive WebXR Fingerprint</h2>
-<button id="start">Start Fingerprint</button>
+<h2>XR-Only Fingerprint (Desktop Compatible)</h2>
+<button id="run">Generate XR Fingerprint</button>
 <pre id="output"></pre>
 
 <script>
@@ -29,173 +29,107 @@ function hash(str) {
   return (h >>> 0).toString(16);
 }
 
-async function detectSupportedFeatures() {
-  const candidates = [
-    "anchors",
-    "hit-test",
-    "depth-sensing",
-    "plane-detection",
-    "image-tracking"
-  ];
+document.getElementById("run").onclick = async () => {
 
-  const supported = [];
-
-  for (const feature of candidates) {
-    try {
-      const s = await navigator.xr.requestSession("immersive-ar", {
-        requiredFeatures: [feature]
-      });
-      await s.end();
-      supported.push(feature);
-    } catch {}
-  }
-
-  return supported;
-}
-
-document.getElementById("start").onclick = async () => {
+  output.textContent = "";
 
   if (!navigator.xr) {
-    log("WebXR not supported.");
+    log("WebXR not available.");
     return;
   }
-
-  const arSupported = await navigator.xr.isSessionSupported("immersive-ar");
-  if (!arSupported) {
-    log("immersive-ar not supported.");
-    return;
-  }
-
-  const supportedFeatures = await detectSupportedFeatures();
-  log("Supported Features: " + supportedFeatures.join(", "));
-
-  const session = await navigator.xr.requestSession("immersive-ar", {
-    requiredFeatures: supportedFeatures
-  });
 
   const fingerprint = [];
 
-  fingerprint.push("features:" + supportedFeatures.join(","));
-
-  // XRSession.inputSources
-  fingerprint.push("initialInputCount:" + session.inputSources.length);
-
-  session.addEventListener("inputsourceschange", (e) => {
-    fingerprint.push("inputsAdded:" + e.added.length);
-    fingerprint.push("inputsRemoved:" + e.removed.length);
-    fingerprint.push("eventSession:" + !!e.session);
-  });
-
-  session.addEventListener("end", (e) => {
-    fingerprint.push("endEventSession:" + !!e.session);
-  });
-
-  if (session.getTrackedImageScores) {
+  // Session support surface
+  const modes = ["inline", "immersive-vr", "immersive-ar"];
+  for (const mode of modes) {
     try {
-      const scores = await session.getTrackedImageScores();
-      fingerprint.push("imageScores:" + scores.join(","));
-    } catch {}
+      const supported = await navigator.xr.isSessionSupported(mode);
+      fingerprint.push("mode:" + mode + ":" + supported);
+    } catch {
+      fingerprint.push("mode:" + mode + ":error");
+    }
   }
 
-  const refSpace = await session.requestReferenceSpace("local");
+  const inlineSupported = await navigator.xr.isSessionSupported("inline");
+  if (!inlineSupported) {
+    log("Inline XR not supported.");
+    return;
+  }
+
+  const session = await navigator.xr.requestSession("inline");
+
+  // Input source baseline
+  fingerprint.push("initialInputSources:" + session.inputSources.length);
+
+  // Reference space probing
+  const refTypes = ["viewer", "local", "local-floor", "bounded-floor"];
+  for (const type of refTypes) {
+    try {
+      await session.requestReferenceSpace(type);
+      fingerprint.push("refSpace:" + type + ":true");
+    } catch {
+      fingerprint.push("refSpace:" + type + ":false");
+    }
+  }
+
+  const refSpace = await session.requestReferenceSpace("viewer");
+
+  let frameCount = 0;
+  const frameTimes = [];
 
   session.requestAnimationFrame(function onFrame(time, frame) {
+
+    frameCount++;
+    frameTimes.push(time);
 
     const pose = frame.getViewerPose(refSpace);
 
     if (pose) {
-      fingerprint.push("viewCount:" + pose.views.length);
-    }
 
-    // XRViewerPose.views
-    if (pose && pose.views.length) {
+      // View count
+      fingerprint.push("viewCount:" + pose.views.length);
 
       const view = pose.views[0];
 
-      // Depth
-      if (frame.getDepthInformation) {
-        try {
-          const depth = frame.getDepthInformation(view);
-          if (depth) {
-            fingerprint.push("rawValueToMeters:" + depth.rawValueToMeters);
-          }
-        } catch {}
-      }
+      // Projection matrix precision sample
+      const proj = Array.from(view.projectionMatrix).slice(0, 8);
+      fingerprint.push("proj:" + proj.map(v => v.toFixed(5)).join(","));
 
-      // XRGPUSubImage
-      if (frame.getViewSubImage) {
-        try {
-          const subImage = frame.getViewSubImage(view);
-          fingerprint.push("hasColorTexture:" + !!subImage.colorTexture);
+      // Transform precision test
+      const t = new XRRigidTransform();
+      const inv = t.inverse;
+      fingerprint.push("inverseExists:" + !!inv);
 
-          if (subImage.getViewDescriptor) {
-            const desc = subImage.getViewDescriptor();
-            fingerprint.push("viewWidth:" + desc.width);
-            fingerprint.push("viewHeight:" + desc.height);
-          }
-        } catch {}
+      if (inv) {
+        fingerprint.push("invMatrixSample:" +
+          Array.from(inv.matrix).slice(0,4).map(v => v.toFixed(5)).join(","));
       }
     }
 
-    // Input sources
-    for (const source of session.inputSources) {
-      fingerprint.push("handedness:" + source.handedness);
-      fingerprint.push("hasTargetRaySpace:" + !!source.targetRaySpace);
-    }
+    if (frameCount < 6) {
+      session.requestAnimationFrame(onFrame);
+    } else {
 
-    // Plane detection
-    if (frame.detectedPlanes) {
-      for (const plane of frame.detectedPlanes) {
-        fingerprint.push("planeLastChanged:" + plane.lastChangedTime);
+      // Frame interval analysis
+      const deltas = [];
+      for (let i = 1; i < frameTimes.length; i++) {
+        deltas.push((frameTimes[i] - frameTimes[i-1]).toFixed(3));
       }
-    }
 
-    // Anchors
-    if (frame.createAnchor) {
-      frame.createAnchor(new XRRigidTransform())
-        .then(() => fingerprint.push("frameAnchor:true"))
-        .catch(() => fingerprint.push("frameAnchor:false"));
-    }
+      fingerprint.push("frameDeltas:" + deltas.join(","));
 
-    // Hit test
-    if (frame.getHitTestResults) {
-      try {
-        const hits = frame.getHitTestResults([]);
-        fingerprint.push("hitCount:" + hits.length);
-        for (const hit of hits) {
-          if (hit.createAnchor) {
-            hit.createAnchor()
-              .then(() => fingerprint.push("hitAnchor:true"))
-              .catch(() => fingerprint.push("hitAnchor:false"));
-          }
-        }
-      } catch {}
-    }
-
-    // XRRigidTransform.inverse
-    const t = new XRRigidTransform();
-    fingerprint.push("inverseExists:" + !!t.inverse);
-
-    // Image tracking
-    if (frame.getImageTrackingResults) {
-      const results = frame.getImageTrackingResults();
-      for (const r of results) {
-        fingerprint.push("imageIndex:" + r.index);
-      }
-    }
-
-    setTimeout(() => {
       const material = fingerprint.join("|");
       const finalHash = hash(material);
 
-      log("\n=== Fingerprint Material ===");
+      log("=== XR Fingerprint Material ===");
       log(material);
 
-      log("\n=== Fingerprint Hash ===");
+      log("\n=== XR Fingerprint Hash ===");
       log(finalHash);
 
       session.end();
-    }, 1000);
+    }
   });
 };
 </script>
