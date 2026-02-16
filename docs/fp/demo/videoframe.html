@@ -2,87 +2,103 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>VideoFrame Diagnostic</title>
+<title>VideoFrame Fingerprint Demo</title>
 <style>
-body { font-family: monospace; padding:20px; background:#111; color:#0f0; }
-button { margin: 10px 0; }
+body { font-family: monospace; background:#111; color:#0f0; padding:20px; }
 pre { white-space: pre-wrap; }
-canvas { border:1px solid #555; margin-top:10px; }
+button { margin-bottom: 10px; }
 </style>
 </head>
 <body>
 
-<h2>VideoFrame Property Diagnostic</h2>
-<button id="runBtn">Create & Inspect VideoFrame</button>
-
+<h2>VideoFrame Fingerprint Demonstration</h2>
+<button id="run">Generate Fingerprint</button>
 <pre id="output"></pre>
-<canvas id="canvas" width="320" height="240"></canvas>
 
 <script>
 const output = document.getElementById("output");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
 
-function log(title, data) {
-  output.textContent += `\n=== ${title} ===\n`;
-  output.textContent += typeof data === "object"
-    ? JSON.stringify(data, null, 2)
-    : String(data);
-  output.textContent += "\n";
+function log(data) {
+  output.textContent += data + "\n";
 }
 
-document.getElementById("runBtn").addEventListener("click", async () => {
-
-  if (typeof VideoFrame === "undefined") {
-    log("WebCodecs Support", "VideoFrame is NOT supported.");
-    return;
+function simpleHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(31, h) + str.charCodeAt(i) | 0;
   }
+  return (h >>> 0).toString(16);
+}
+
+async function testResolution(width, height) {
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, width, height);
+
+  const start = performance.now();
+  const frame = new VideoFrame(canvas, { timestamp: 0 });
+  const end = performance.now();
+
+  const result = {
+    requestedWidth: width,
+    requestedHeight: height,
+    codedWidth: frame.codedWidth,
+    codedHeight: frame.codedHeight,
+    displayWidth: frame.displayWidth,
+    displayHeight: frame.displayHeight,
+    alignmentDeltaHeight: frame.codedHeight - height,
+    allocationTimeMs: +(end - start).toFixed(4)
+  };
+
+  frame.close();
+  return result;
+}
+
+document.getElementById("run").addEventListener("click", async () => {
 
   output.textContent = "";
 
-  // Draw something into canvas
-  ctx.fillStyle = "red";
-  ctx.fillRect(0, 0, 320, 240);
-
-  // Create VideoFrame from canvas
-  const frame = new VideoFrame(canvas, {
-    timestamp: 123456
-  });
-
-  try {
-    const properties = {
-      codedWidth: frame.codedWidth,
-      codedHeight: frame.codedHeight,          // required
-      displayWidth: frame.displayWidth,        // required
-      displayHeight: frame.displayHeight,
-      duration: frame.duration,
-      format: frame.format,
-      timestamp: frame.timestamp,
-      colorSpace: frame.colorSpace ? {
-        primaries: frame.colorSpace.primaries,
-        transfer: frame.colorSpace.transfer,
-        matrix: frame.colorSpace.matrix,
-        fullRange: frame.colorSpace.fullRange
-      } : null,
-      visibleRect: frame.visibleRect
-    };
-
-    log("VideoFrame Properties", properties);
-
-    // Attempt structured clone test
-    try {
-      const cloned = structuredClone(frame);
-      log("Structured Clone", "Success");
-      cloned.close();
-    } catch (e) {
-      log("Structured Clone", "Failed: " + e.message);
-    }
-
-  } catch (err) {
-    log("Error Inspecting Frame", err.message);
+  if (typeof VideoFrame === "undefined") {
+    log("VideoFrame not supported.");
+    return;
   }
 
-  frame.close();
+  const testResolutions = [
+    [641, 359],
+    [853, 479],
+    [1023, 767],
+    [1281, 721],
+    [1919, 1079]
+  ];
+
+  const results = [];
+
+  for (const [w, h] of testResolutions) {
+    const r = await testResolution(w, h);
+    results.push(r);
+  }
+
+  log("=== Raw Results ===");
+  log(JSON.stringify(results, null, 2));
+
+  // Build fingerprint material
+  const fingerprintMaterial = results.map(r =>
+    [
+      r.codedHeight,
+      r.displayWidth,
+      r.alignmentDeltaHeight,
+      r.allocationTimeMs
+    ].join(":")
+  ).join("|");
+
+  const fingerprint = simpleHash(fingerprintMaterial);
+
+  log("\n=== Fingerprint Material ===");
+  log(fingerprintMaterial);
+
+  log("\n=== Derived Fingerprint Hash ===");
+  log(fingerprint);
 });
 </script>
 
