@@ -1,65 +1,125 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Passive Gamepad Sniffer</title>
-    <style>
-        body { font-family: 'Courier New', monospace; background: #0f172a; color: #38bdf8; padding: 40px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .card { border: 1px solid #1e293b; background: #1e293b; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); }
-        .pid-vid { color: #fbbf24; font-weight: bold; }
-        .log { margin-top: 20px; font-size: 0.8rem; color: #64748b; }
-    </style>
+<meta charset="utf-8">
+<title>Gamepad Fingerprinting PoC</title>
+<style>
+  body { font-family: monospace; padding: 20px; }
+  button { margin: 6px 6px 6px 0; }
+  pre { background: #111; color: #0f0; padding: 15px; white-space: pre-wrap; }
+</style>
 </head>
 <body>
-    <h1>Automated Gamepad Discovery</h1>
-    <p>Status: <span id="status">Probing API...</span></p>
-    
-    <div id="display" class="grid"></div>
-    <div class="log" id="log"></div>
 
-    <script>
-        const display = document.getElementById('display');
-        const status = document.getElementById('status');
-        const log = document.getElementById('log');
+<h2>Gamepad Fingerprinting PoC</h2>
+<p>Connect a controller and press any button before running.</p>
 
-        function autoProbe() {
-            // Force a poll of the hardware state
-            const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-            let found = false;
+<button onclick="runGamepadFingerprint()">Run Gamepad Fingerprint</button>
+<pre id="out">Waiting...</pre>
 
-            display.innerHTML = ''; 
+<script>
+const out = document.getElementById("out");
 
-            for (let i = 0; i < gamepads.length; i++) {
-                const gp = gamepads[i];
-                if (gp) {
-                    found = true;
-                    status.innerText = "ACTIVE HARDWARE DETECTED";
-                    status.style.color = "#4ade80";
-                    
-                    display.innerHTML += `
-                        <div class="card">
-                            <div style="margin-bottom:10px;"><strong>Controller Index:</strong> ${gp.index}</div>
-                            <div class="pid-vid">${gp.id}</div>
-                            <hr style="border:0; border-top:1px solid #334155; margin:10px 0;">
-                            <div>Mapping: ${gp.mapping}</div>
-                            <div>Axes Count: ${gp.axes.length}</div>
-                            <div>Button Count: ${gp.buttons.length}</div>
-                        </div>
-                    `;
-                }
-            }
+function print(obj) {
+  out.textContent = JSON.stringify(obj, null, 2);
+}
 
-            if (!found) {
-                log.innerText = "Polling buffer... (Waiting for hardware activation)";
-            }
+async function sha256(str) {
+  const data = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
-            // High-frequency loop
-            requestAnimationFrame(autoProbe);
-        }
+/* Measure timestamp resolution & jitter */
+async function measureTimestamp(gamepad, samples = 50) {
+  const timestamps = [];
+  const deltas = [];
 
-        // Start probing immediately on load
-        autoProbe();
-    </script>
+  for (let i = 0; i < samples; i++) {
+    const gp = navigator.getGamepads()[gamepad.index];
+    if (!gp) break;
+
+    timestamps.push(gp.timestamp);
+
+    if (i > 0) {
+      deltas.push(gp.timestamp - timestamps[i - 1]);
+    }
+
+    await new Promise(r => requestAnimationFrame(r));
+  }
+
+  return {
+    first: timestamps[0],
+    last: timestamps[timestamps.length - 1],
+    deltas: deltas,
+    minDelta: Math.min(...deltas),
+    maxDelta: Math.max(...deltas)
+  };
+}
+
+/* Measure axis precision */
+function axisPrecision(axes) {
+  return axes.map(a => {
+    const str = a.toString();
+    const decimals = str.includes(".") ? str.split(".")[1].length : 0;
+    return decimals;
+  });
+}
+
+/* Measure button analog precision */
+function buttonPrecision(buttons) {
+  return buttons.map(b => {
+    const str = b.value.toString();
+    const decimals = str.includes(".") ? str.split(".")[1].length : 0;
+    return decimals;
+  });
+}
+
+async function runGamepadFingerprint() {
+
+  const gamepads = navigator.getGamepads();
+  const result = {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    gamepads: []
+  };
+
+  for (const gp of gamepads) {
+    if (!gp) continue;
+
+    const entry = {
+      id: gp.id,
+      index: gp.index,
+      mapping: gp.mapping,
+      connected: gp.connected,
+      axesCount: gp.axes.length,
+      buttonsCount: gp.buttons.length,
+      axisPrecision: axisPrecision(gp.axes),
+      buttonPrecision: buttonPrecision(gp.buttons)
+    };
+
+    entry.timestampAnalysis = await measureTimestamp(gp);
+
+    result.gamepads.push(entry);
+  }
+
+  result.hash = await sha256(JSON.stringify(result));
+
+  print(result);
+}
+
+/* Optional: detect connect/disconnect */
+window.addEventListener("gamepadconnected", e => {
+  console.log("Gamepad connected:", e.gamepad.id);
+});
+
+window.addEventListener("gamepaddisconnected", e => {
+  console.log("Gamepad disconnected:", e.gamepad.id);
+});
+</script>
+
 </body>
 </html>
+
