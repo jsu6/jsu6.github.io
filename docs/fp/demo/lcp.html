@@ -1,41 +1,99 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>LCP Fingerprint Sniffer</title>
-    <style>
-        body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 2rem; }
-        .data-card { border-left: 4px solid #bb86fc; background: #1e1e1e; padding: 1rem; margin: 10px 0; }
-        .val { color: #03dac6; font-weight: bold; }
-    </style>
+<meta charset="utf-8">
+<title>LCP Fingerprinting PoC</title>
+
+<style>
+  body { font-family: Arial; margin: 0; }
+  .hero {
+    width: 100%;
+    height: 60vh;
+    background-image: url("https://picsum.photos/1200/800");
+    background-size: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hero h1 {
+    font-size: 5vw;
+    color: white;
+    text-shadow: 2px 2px 10px black;
+  }
+  .content {
+    padding: 40px;
+  }
+  pre {
+    background: #111;
+    color: #0f0;
+    padding: 15px;
+    white-space: pre-wrap;
+  }
+</style>
 </head>
 <body>
-    <h2>LCP Performance Fingerprint</h2>
-    <div id="results">Waiting for LCP entry...</div>
-    
-    <div id="fingerprint-target-element" style="width: 80%; height: 200px; background: linear-gradient(45deg, #333, #444); margin-top: 50px;">
-        (Largest Element)
-    </div>
 
-    <script>
-        const observer = new PerformanceObserver((list) => {
-            const entries = list.getEntries();
-            const lastEntry = entries[entries.length - 1]; // Get the most recent LCP
-            
-            document.getElementById('results').innerHTML = `
-                <div class="data-card">
-                    <p>Element ID: <span class="val">${lastEntry.id || 'None'}</span></p>
-                    <p>Render Size (Area): <span class="val">${lastEntry.size}px²</span></p>
-                    <p>Load Time: <span class="val">${lastEntry.loadTime.toFixed(2)}ms</span></p>
-                    <p>Element Tag: <span class="val">${lastEntry.element ? lastEntry.element.tagName : 'N/A'}</span></p>
-                </div>
-            `;
-            
-            console.log("LCP Fingerprint Data:", lastEntry);
-        });
+<div class="hero" id="hero-image">
+  <h1 id="hero-text">LCP Fingerprint Test</h1>
+</div>
 
-        // Start observing for 'largest-contentful-paint' entries
-        observer.observe({ type: 'largest-contentful-paint', buffered: true });
-    </script>
+<div class="content">
+  <p>This page intentionally creates competing LCP candidates (image + text).</p>
+  <pre id="output">Waiting for LCP...</pre>
+</div>
+
+<script>
+const output = document.getElementById("output");
+
+function print(obj) {
+  output.textContent = JSON.stringify(obj, null, 2);
+}
+
+async function sha256(str) {
+  const data = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+let lcpEntries = [];
+
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    lcpEntries.push({
+      id: entry.id,
+      size: entry.size,
+      startTime: entry.startTime,
+      elementTag: entry.element ? entry.element.tagName : null,
+      url: entry.url || null
+    });
+  }
+});
+
+observer.observe({ type: "largest-contentful-paint", buffered: true });
+
+window.addEventListener("load", async () => {
+  setTimeout(async () => {
+    observer.disconnect();
+
+    const result = {
+      userAgent: navigator.userAgent,
+      devicePixelRatio: window.devicePixelRatio,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight
+      },
+      lcpCandidates: lcpEntries
+    };
+
+    result.hash = await sha256(JSON.stringify(result));
+
+    print(result);
+  }, 1000);
+});
+</script>
+
 </body>
 </html>
+
