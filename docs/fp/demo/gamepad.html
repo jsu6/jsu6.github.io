@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gamepad Fingerprinting PoC</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #00ff00; padding: 20px; }
+        .data-box { border: 1px solid #333; padding: 15px; margin-top: 10px; background: #000; }
+        .stat { margin-bottom: 5px; }
+        .label { color: #888; }
+    </style>
+</head>
+<body>
+    <h2>Gamepad Hardware Fingerprint</h2>
+    <p>Connect a controller or press a button to initialize...</p>
+    <div id="output"></div>
+
+    <script>
+        function scanGamepads() {
+            const gamepads = navigator.getGamepads();
+            const output = document.getElementById('output');
+            output.innerHTML = ''; // Clear previous
+
+            for (const gp of gamepads) {
+                if (gp) {
+                    const gpData = `
+                        <div class="data-box">
+                            <div class="stat"><span class="label">ID:</span> ${gp.id}</div>
+                            <div class="stat"><span class="label">Mapping:</span> ${gp.mapping || 'Standard'}</div>
+                            <div class="stat"><span class="label">Buttons:</span> ${gp.buttons.length}</div>
+                            <div class="stat"><span class="label">Axes:</span> ${gp.axes.length}</div>
+                            <div class="stat"><span class="label">Index:</span> ${gp.index}</div>
+                        </div>
+                    `;
+                    output.innerHTML += gpData;
+                    
+                    // Log the raw ID which often contains Vendor ID (VID) and Product ID (PID)
+                    console.log("Fingerprint Source (ID):", gp.id);
+                }
+            }
+        }
+
+        window.addEventListener("gamepadconnected", (e) => {
+            console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+                e.gamepad.index, e.gamepad.id,
+                e.gamepad.buttons.length, e.gamepad.axes.length);
+            scanGamepads();
+        });
+
+        // Loop to catch state changes
+        setInterval(scanGamepads, 1000);
+    </script>
+</body>
+</html>
