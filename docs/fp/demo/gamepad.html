@@ -2,53 +2,64 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Gamepad Fingerprinting PoC</title>
+    <title>Passive Gamepad Sniffer</title>
     <style>
-        body { font-family: monospace; background: #1a1a1a; color: #00ff00; padding: 20px; }
-        .data-box { border: 1px solid #333; padding: 15px; margin-top: 10px; background: #000; }
-        .stat { margin-bottom: 5px; }
-        .label { color: #888; }
+        body { font-family: 'Courier New', monospace; background: #0f172a; color: #38bdf8; padding: 40px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .card { border: 1px solid #1e293b; background: #1e293b; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); }
+        .pid-vid { color: #fbbf24; font-weight: bold; }
+        .log { margin-top: 20px; font-size: 0.8rem; color: #64748b; }
     </style>
 </head>
 <body>
-    <h2>Gamepad Hardware Fingerprint</h2>
-    <p>Connect a controller or press a button to initialize...</p>
-    <div id="output"></div>
+    <h1>Automated Gamepad Discovery</h1>
+    <p>Status: <span id="status">Probing API...</span></p>
+    
+    <div id="display" class="grid"></div>
+    <div class="log" id="log"></div>
 
     <script>
-        function scanGamepads() {
-            const gamepads = navigator.getGamepads();
-            const output = document.getElementById('output');
-            output.innerHTML = ''; // Clear previous
+        const display = document.getElementById('display');
+        const status = document.getElementById('status');
+        const log = document.getElementById('log');
 
-            for (const gp of gamepads) {
+        function autoProbe() {
+            // Force a poll of the hardware state
+            const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+            let found = false;
+
+            display.innerHTML = ''; 
+
+            for (let i = 0; i < gamepads.length; i++) {
+                const gp = gamepads[i];
                 if (gp) {
-                    const gpData = `
-                        <div class="data-box">
-                            <div class="stat"><span class="label">ID:</span> ${gp.id}</div>
-                            <div class="stat"><span class="label">Mapping:</span> ${gp.mapping || 'Standard'}</div>
-                            <div class="stat"><span class="label">Buttons:</span> ${gp.buttons.length}</div>
-                            <div class="stat"><span class="label">Axes:</span> ${gp.axes.length}</div>
-                            <div class="stat"><span class="label">Index:</span> ${gp.index}</div>
+                    found = true;
+                    status.innerText = "ACTIVE HARDWARE DETECTED";
+                    status.style.color = "#4ade80";
+                    
+                    display.innerHTML += `
+                        <div class="card">
+                            <div style="margin-bottom:10px;"><strong>Controller Index:</strong> ${gp.index}</div>
+                            <div class="pid-vid">${gp.id}</div>
+                            <hr style="border:0; border-top:1px solid #334155; margin:10px 0;">
+                            <div>Mapping: ${gp.mapping}</div>
+                            <div>Axes Count: ${gp.axes.length}</div>
+                            <div>Button Count: ${gp.buttons.length}</div>
                         </div>
                     `;
-                    output.innerHTML += gpData;
-                    
-                    // Log the raw ID which often contains Vendor ID (VID) and Product ID (PID)
-                    console.log("Fingerprint Source (ID):", gp.id);
                 }
             }
+
+            if (!found) {
+                log.innerText = "Polling buffer... (Waiting for hardware activation)";
+            }
+
+            // High-frequency loop
+            requestAnimationFrame(autoProbe);
         }
 
-        window.addEventListener("gamepadconnected", (e) => {
-            console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
-                e.gamepad.index, e.gamepad.id,
-                e.gamepad.buttons.length, e.gamepad.axes.length);
-            scanGamepads();
-        });
-
-        // Loop to catch state changes
-        setInterval(scanGamepads, 1000);
+        // Start probing immediately on load
+        autoProbe();
     </script>
 </body>
 </html>
