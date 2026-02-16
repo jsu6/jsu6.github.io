@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>ResizeObserver + SVG Geometry Demo</title>
+<meta charset="UTF-8">
+<title>SVG Geometry Entropy Study</title>
 <style>
   body {
     font-family: system-ui, sans-serif;
     margin: 20px;
   }
 
-  #container {
-    width: 60%;
+  #svgContainer {
+    width: 70%;
     resize: horizontal;
     overflow: auto;
     border: 2px solid #333;
@@ -19,94 +19,120 @@
 
   svg {
     width: 100%;
-    height: 300px;
-    border: 1px solid #999;
-    background: #f8f8f8;
+    height: 350px;
+    border: 1px solid #aaa;
+    background: #f9f9f9;
   }
 
   #log {
     margin-top: 20px;
     font-family: monospace;
-    background: #f4f4f4;
-    padding: 10px;
     white-space: pre-wrap;
+    background: #f4f4f4;
+    padding: 12px;
+    max-height: 400px;
+    overflow: auto;
   }
 </style>
 </head>
 <body>
 
-<h2>SVG + ResizeObserver Geometry Demo</h2>
-<p>Resize the container horizontally to trigger updates.</p>
+<h2>SVG Geometry Entropy Measurement</h2>
+<p>
+This page collects SVG layout measurements for academic entropy analysis.
+Resize the container or change zoom level to compare outputs.
+</p>
 
-<div id="container">
-  <svg id="mysvg" viewBox="0 0 500 300">
-    <rect id="myrect" x="50" y="80" width="150" height="100" fill="steelblue" tabindex="0"/>
-    <foreignObject id="myforeign" x="250" y="120" width="200" height="100">
+<div id="svgContainer">
+  <svg id="mysvg" viewBox="0 0 600 350">
+    <rect id="rectA"
+          x="73.3333"
+          y="91.7777"
+          width="213.5555"
+          height="147.4444"
+          fill="steelblue"
+          tabindex="0"/>
+    
+    <foreignObject id="foreignA"
+                   x="310.2222"
+                   y="127.8888"
+                   width="220.3333"
+                   height="120.6666">
       <div xmlns="http://www.w3.org/1999/xhtml"
-           style="font-size:16px; background:#fff; padding:5px;">
-        ForeignObject content
+           style="font-size:17.3333px;
+                  line-height:1.2345;
+                  padding:3.14159px;
+                  font-family: system-ui, serif;">
+        Entropy Probe Ω≈ç√∫˜µ≤≥÷
       </div>
     </foreignObject>
   </svg>
 </div>
 
-<h3>Live Geometry Data</h3>
-<div id="log">Waiting for resize...</div>
+<button id="run">Collect Measurements</button>
+
+<h3>Measurement Vector</h3>
+<div id="log"></div>
 
 <script>
 const svg = document.getElementById("mysvg");
-const rect = document.getElementById("myrect");
-const foreign = document.getElementById("myforeign");
+const rect = document.getElementById("rectA");
+const foreign = document.getElementById("foreignA");
 const log = document.getElementById("log");
 
-// Focus handling (standard SVG focus)
-rect.addEventListener("click", () => {
-  rect.focus();
-});
-
-// ResizeObserver for SVG element
-const ro = new ResizeObserver(entries => {
-  const entry = entries[0];
-
-  // SVG bounding box (SVGGraphicsElement.getBBox)
+function collectMeasurements() {
+  // 1. getBBox() geometry
   const bbox = rect.getBBox();
 
-  // Access SVGRect.y via getBBox result
+  // 2. SVGRect.y via bbox
   const rectY = bbox.y;
 
-  // Access SVGForeignObjectElement.y (baseVal.value)
+  // 3. SVGForeignObjectElement.y
   const foreignY = foreign.y.baseVal.value;
 
-  // Create and transform SVGPoint
+  // 4. createSVGPoint + screen CTM transform
   const point = svg.createSVGPoint();
-  point.x = 100;
-  point.y = 100;
+  point.x = 123.4567;
+  point.y = 234.5678;
 
   const ctm = svg.getScreenCTM();
-  const screenPoint = point.matrixTransform(ctm);
+  const transformed = point.matrixTransform(ctm);
 
-  const output = {
-    svgContentWidth: entry.contentRect.width,
-    svgContentHeight: entry.contentRect.height,
-    rectBBox: {
-      x: bbox.x,
-      y: bbox.y,
-      width: bbox.width,
-      height: bbox.height
-    },
-    rectY: rectY,
-    foreignObjectY: foreignY,
-    transformedPointToScreen: {
-      x: screenPoint.x,
-      y: screenPoint.y
-    },
-    isRectFocused: document.activeElement === rect
-  };
+  // 5. Focus behavior measurement
+  rect.focus();
+  const focused = document.activeElement === rect;
 
-  log.textContent = JSON.stringify(output, null, 2);
-});
+  // 6. ResizeObserver contentRect
+  const ro = new ResizeObserver(entries => {
+    const entry = entries[0];
 
-ro.observe(svg);
+    const result = {
+      devicePixelRatio: window.devicePixelRatio,
+      svgContentWidth: entry.contentRect.width,
+      svgContentHeight: entry.contentRect.height,
+      rectBBox: {
+        x: bbox.x,
+        y: bbox.y,
+        width: bbox.width,
+        height: bbox.height
+      },
+      rectY: rectY,
+      foreignObjectY: foreignY,
+      transformedPoint: {
+        x: transformed.x,
+        y: transformed.y
+      },
+      focusState: focused
+    };
+
+    log.textContent = JSON.stringify(result, null, 2);
+    ro.disconnect();
+  });
+
+  ro.observe(svg);
+}
+
+document.getElementById("run").addEventListener("click", collectMeasurements);
 </script>
 
 </body>
