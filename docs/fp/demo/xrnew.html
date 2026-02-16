@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>WebXR Fingerprint Demo</title>
+<style>
+body { background:#111; color:#0f0; font-family:monospace; padding:20px; }
+pre { white-space:pre-wrap; }
+button { margin-bottom:10px; }
+</style>
+</head>
+<body>
+
+<h2>WebXR Fingerprint Demonstration</h2>
+<button id="start">Start XR Fingerprint</button>
+<pre id="output"></pre>
+
+<script>
+const output = document.getElementById("output");
+
+function log(text) {
+  output.textContent += text + "\n";
+}
+
+function simpleHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++)
+    h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  return (h >>> 0).toString(16);
+}
+
+document.getElementById("start").onclick = async () => {
+
+  if (!navigator.xr) {
+    log("WebXR not supported.");
+    return;
+  }
+
+  const fingerprintData = [];
+
+  try {
+    const session = await navigator.xr.requestSession("immersive-ar", {
+      requiredFeatures: [
+        "anchors",
+        "hit-test",
+        "depth-sensing",
+        "plane-detection",
+        "image-tracking"
+      ]
+    });
+
+    fingerprintData.push("sessionMode:immersive-ar");
+
+    // XRSessionEvent.session
+    session.addEventListener("end", (e) => {
+      fingerprintData.push("sessionEventSession:" + !!e.session);
+    });
+
+    // XRSession.inputSources
+    fingerprintData.push("inputSourcesCount:" + session.inputSources.length);
+
+    // XRSession.getTrackedImageScores
+    if (session.getTrackedImageScores) {
+      const scores = await session.getTrackedImageScores();
+      fingerprintData.push("trackedImageScores:" + scores.join(","));
+    }
+
+    // XRInputSourcesChangeEvent
+    session.addEventListener("inputsourceschange", (event) => {
+      fingerprintData.push("inputsAdded:" + event.added.length);
+      fingerprintData.push("inputsRemoved:" + event.removed.length);
+      fingerprintData.push("inputSessionExists:" + !!event.session);
+    });
+
+    const refSpace = await session.requestReferenceSpace("local");
+
+    session.requestAnimationFrame(function onFrame(time, frame) {
+
+      // XRViewerPose.views
+      const pose = frame.getViewerPose(refSpace);
+      if (pose) {
+        fingerprintData.push("viewCount:" + pose.views.length);
+      }
+
+      // XRInputSource properties
+      for (const source of session.inputSources) {
+        fingerprintData.push("handedness:" + source.handedness);
+        fingerprintData.push("hasTargetRaySpace:" + !!source.targetRaySpace);
+      }
+
+      // Depth sensing
+      if (frame.getDepthInformation) {
+        const depthInfo = frame.getDepthInformation(pose.views[0]);
+        if (depthInfo) {
+          fingerprintData.push("rawValueToMeters:" + depthInfo.rawValueToMeters);
+        }
+      }
+
+      // Plane detection
+      if (frame.detectedPlanes) {
+        for (const plane of frame.detectedPlanes) {
+          fingerprintData.push("planeLastChanged:" + plane.lastChangedTime);
+        }
+      }
+
+      // Hit test → XRHitTestResult.createAnchor
+      if (frame.getHitTestResults) {
+        const hitResults = frame.getHitTestResults([]);
+        for (const hit of hitResults) {
+          if (hit.createAnchor) {
+            hit.createAnchor().then(anchor => {
+              fingerprintData.push("hitAnchorCreated:true");
+            }).catch(()=>{});
+          }
+        }
+      }
+
+      // XRFrame.createAnchor
+      if (frame.createAnchor) {
+        frame.createAnchor(new XRRigidTransform())
+          .then(anchor => {
+            fingerprintData.push("frameAnchorCreated:true");
+          }).catch(()=>{});
+      }
+
+      // XRRigidTransform.inverse
+      const transform = new XRRigidTransform();
+      fingerprintData.push("inverseMatrixExists:" + !!transform.inverse);
+
+      // XRImageTrackingResult.index
+      if (frame.getImageTrackingResults) {
+        const results = frame.getImageTrackingResults();
+        for (const r of results) {
+          fingerprintData.push("imageIndex:" + r.index);
+        }
+      }
+
+      // XRGPUSubImage
+      if (frame.getViewSubImage) {
+        try {
+          const subImage = frame.getViewSubImage(pose.views[0]);
+          fingerprintData.push("hasColorTexture:" + !!subImage.colorTexture);
+
+          if (subImage.getViewDescriptor) {
+            const desc = subImage.getViewDescriptor();
+            fingerprintData.push("viewDescriptorWidth:" + desc.width);
+            fingerprintData.push("viewDescriptorHeight:" + desc.height);
+          }
+        } catch {}
+      }
+
+      // Finalize fingerprint after first frame
+      setTimeout(() => {
+        const material = fingerprintData.join("|");
+        const hash = simpleHash(material);
+
+        log("=== Fingerprint Material ===");
+        log(material);
+
+        log("\n=== Fingerprint Hash ===");
+        log(hash);
+
+        session.end();
+      }, 1000);
+    });
+
+  } catch (err) {
+    log("XR Error: " + err.message);
+  }
+};
+</script>
+
+</body>
+</html>
+
