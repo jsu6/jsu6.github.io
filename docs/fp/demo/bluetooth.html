@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Web Bluetooth Diagnostic</title>
+</head>
+<body>
+<button id="run">Connect Bluetooth Device</button>
+<pre id="output"></pre>
+
+<script>
+const output = document.getElementById("output");
+
+function log(msg) {
+  output.textContent += msg + "\n";
+}
+
+document.getElementById("run").onclick = async () => {
+  if (!navigator.bluetooth) {
+    log("Web Bluetooth not supported.");
+    return;
+  }
+
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: ['battery_service']
+    });
+
+    log("Device name: " + device.name);
+    log("Device id: " + device.id);
+
+    if (device.gatt) {
+      const server = await device.gatt.connect();
+      log("GATT connected: " + server.connected);
+
+      const service = await server.getPrimaryService('battery_service');
+      const characteristic = await service.getCharacteristic('battery_level');
+
+      const descriptors = await characteristic.getDescriptors();
+      for (const descriptor of descriptors) {
+        const value = await descriptor.readValue();
+        log("Descriptor UUID: " + descriptor.uuid);
+        log("Descriptor value length: " + value.byteLength);
+      }
+    }
+
+  } catch (e) {
+    log("Error: " + e.message);
+  }
+};
+</script>
+</body>
+</html>
+
