@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Media API Fingerprinting PoC</title>
+<style>
+  body { font-family: monospace; padding: 20px; }
+  button { margin-right: 10px; }
+  pre { background: #111; color: #0f0; padding: 15px; overflow:auto; }
+</style>
+</head>
+<body>
+
+<h2>Media API Fingerprinting PoC</h2>
+
+<button onclick="runFingerprint()">Run Fingerprint</button>
+<button onclick="requestMedia()">Request Camera/Mic</button>
+
+<pre id="output">Click "Run Fingerprint"</pre>
+
+<script>
+const output = document.getElementById("output");
+
+function log(obj) {
+  output.textContent = JSON.stringify(obj, null, 2);
+}
+
+async function sha256(str) {
+  const buf = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function probeEME() {
+  const keySystems = [
+    "com.widevine.alpha",
+    "com.microsoft.playready",
+    "com.apple.fps.1_0"
+  ];
+
+  const results = {};
+
+  for (const ks of keySystems) {
+    try {
+      const config = [{
+        initDataTypes: ["cenc"],
+        videoCapabilities: [
+          { contentType: 'video/mp4; codecs="avc1.640028"' },
+          { contentType: 'video/webm; codecs="vp09.00.51.08"' }
+        ],
+        audioCapabilities: [
+          { contentType: 'audio/mp4; codecs="mp4a.40.2"' }
+        ],
+        persistentState: "optional",
+        distinctiveIdentifier: "optional"
+      }];
+
+      const access = await navigator.requestMediaKeySystemAccess(ks, config);
+      const conf = access.getConfiguration();
+      results[ks] = conf;
+    } catch (e) {
+      results[ks] = "unsupported";
+    }
+  }
+
+  return results;
+}
+
+function probeMSE() {
+  const types = [
+    'video/mp4; codecs="avc1.640028"',
+    'video/mp4; codecs="hev1.1.6.L93.B0"',
+    'video/webm; codecs="vp09.00.51.08"',
+    'video/webm; codecs="av01.0.05M.08"'
+  ];
+
+  const results = {};
+  types.forEach(t => {
+    results[t] = MediaSource.isTypeSupported(t);
+  });
+
+  return results;
+}
+
+async function probeMediaDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices.map(d => ({
+    kind: d.kind,
+    label: d.label,
+    deviceId: d.deviceId,
+    groupId: d.groupId
+  }));
+}
+
+async function probeAudioStats(stream) {
+  const track = stream.getAudioTracks()[0];
+  if (!track) return "no-audio-track";
+
+  const stats = track.getSettings();
+
+  return {
+    sampleRate: stats.sampleRate,
+    channelCount: stats.channelCount,
+    latency: stats.latency
+  };
+}
+
+async function runFingerprint() {
+  const fingerprint = {};
+
+  fingerprint.userAgent = navigator.userAgent;
+  fingerprint.platform = navigator.platform;
+
+  fingerprint.eme = await probeEME();
+  fingerprint.mse = probeMSE();
+
+  try {
+    fingerprint.devices = await probeMediaDevices();
+  } catch (e) {
+    fingerprint.devices = "enumeration-blocked";
+  }
+
+  const serialized = JSON.stringify(fingerprint);
+  fingerprint.hash = await sha256(serialized);
+
+  log(fingerprint);
+}
+
+async function requestMedia() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    const audioStats = await probeAudioStats(stream);
+
+    const videoTracks = stream.getVideoTracks().map(t => ({
+      label: t.label,
+      settings: t.getSettings()
+    }));
+
+    log({
+      audioStats,
+      videoTracks
+    });
+
+  } catch (e) {
+    log({ error: e.message });
+  }
+}
+</script>
+
+</body>
+</html>
+
