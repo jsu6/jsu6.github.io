@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>WebUSB Full Diagnostic</title>
+<style>
+body { font-family: monospace; padding:20px; background:#111; color:#0f0; }
+button { margin:5px 0; }
+pre { white-space:pre-wrap; }
+</style>
+</head>
+<body>
+
+<h2>WebUSB Deep Diagnostic</h2>
+
+<button id="requestDevice">Request Device</button>
+<button id="forgetDevice">Forget Device</button>
+
+<pre id="output"></pre>
+
+<script>
+const output = document.getElementById("output");
+
+function log(title, data) {
+  output.textContent += `\n=== ${title} ===\n`;
+  output.textContent += typeof data === "object"
+    ? JSON.stringify(data, replacer, 2)
+    : String(data);
+  output.textContent += "\n";
+}
+
+function replacer(key, value) {
+  if (value instanceof DataView) {
+    return Array.from(new Uint8Array(value.buffer));
+  }
+  return value;
+}
+
+let selectedDevice = null;
+
+/* ---------------------------------------------------
+   USB Connection Event
+--------------------------------------------------- */
+navigator.usb.addEventListener("connect", (event) => {
+  log("USBConnectionEvent.device (connect)", {
+    productName: event.device.productName,
+    manufacturerName: event.device.manufacturerName,
+    serialNumber: event.device.serialNumber
+  });
+});
+
+navigator.usb.addEventListener("disconnect", (event) => {
+  log("USBConnectionEvent.device (disconnect)", {
+    productName: event.device.productName
+  });
+});
+
+/* ---------------------------------------------------
+   Request Device
+--------------------------------------------------- */
+document.getElementById("requestDevice").addEventListener("click", async () => {
+  try {
+    const device = await navigator.usb.requestDevice({ filters: [] });
+    selectedDevice = device;
+
+    log("Device Basic Info", {
+      productName: device.productName,
+      manufacturerName: device.manufacturerName,
+      serialNumber: device.serialNumber,
+      deviceProtocol: device.deviceProtocol,
+      deviceSubclass: device.deviceSubclass,
+      deviceVersionMajor: device.deviceVersionMajor
+    });
+
+    await device.open();
+
+    if (device.configuration === null) {
+      await device.selectConfiguration(1);
+    }
+
+    log("USBConfiguration.configurationValue",
+      device.configuration.configurationValue
+    );
+
+    device.configuration.interfaces.forEach(iface => {
+      log("USBInterface.interfaceNumber", iface.interfaceNumber);
+    });
+
+    await runTransfers(device);
+
+  } catch (err) {
+    log("Error (request/open)", err.message);
+  }
+});
+
+/* ---------------------------------------------------
+   Control Transfer + Isochronous Transfer
+--------------------------------------------------- */
+async function runTransfers(device) {
+  try {
+    const result = await device.controlTransferIn({
+      requestType: "standard",
+      recipient: "device",
+      request: 0x06,
+      value: 0x0100,
+      index: 0
+    }, 64);
+
+    log("USBDevice.controlTransferIn()", {
+      status: result.status,
+      data: result.data
+    });
+
+  } catch (err) {
+    log("controlTransferIn Error", err.message);
+  }
+
+  try {
+    const data = new Uint8Array(128);
+    const endpointNumber = 1;
+
+    const isoResult = await device.isochronousTransferOut(
+      endpointNumber,
+      data,
+      [64, 64]
+    );
+
+    log("USBDevice.isochronousTransferOut()", {
+      packets: isoResult.packets
+    });
+
+  } catch (err) {
+    log("isochronousTransferOut Error", err.message);
+  }
+}
+
+/* ---------------------------------------------------
+   Forget Device
+--------------------------------------------------- */
+document.getElementById("forgetDevice").addEventListener("click", async () => {
+  if (!selectedDevice) {
+    log("Forget Device", "No device selected.");
+    return;
+  }
+
+  try {
+    await selectedDevice.forget();
+    log("USBDevice.forget()", "Device permission revoked.");
+  } catch (err) {
+    log("Forget Error", err.message);
+  }
+});
+</script>
+
+</body>
+</html>
