@@ -2,103 +2,111 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SVG API Fingerprint PoC</title>
+    <title>Advanced SVG API Fingerprinting</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #1a1a1a; color: #e0e0e0; }
-        .container { max-width: 900px; margin: auto; }
-        .result-card { background: #2d2d2d; border: 1px solid #444; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
-        .api-name { color: #569cd6; font-weight: bold; font-family: monospace; }
-        .api-value { color: #ce9178; word-break: break-all; font-family: monospace; }
-        h1 { color: #4ec9b0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #444; }
-        th { color: #9cdcfe; }
-        #fingerprint-hash { font-size: 1.5rem; color: #dcdcaa; font-weight: bold; padding: 20px; text-align: center; border: 2px dashed #444; margin-bottom: 20px; }
+        body { font-family: monospace; background: #121212; color: #00ff00; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; }
+        #hash-display { font-size: 1.8rem; border: 2px solid #333; padding: 20px; text-align: center; margin-bottom: 20px; color: #ffcc00; }
+        table { width: 100%; border-collapse: collapse; background: #1e1e1e; }
+        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+        th { background: #333; color: #fff; }
+        .diff { color: #ff6666; font-weight: bold; }
+        #target-svg { position: absolute; left: -9999px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>SVG API Entropy Collector</h1>
-    <div id="fingerprint-hash">Generating Unique Signature...</div>
+    <h1>SVG Entropy Probe</h1>
+    <div id="hash-display">Calculating Signature...</div>
 
     <table>
         <thead>
             <tr>
-                <th>Target API / Property</th>
-                <th>Observed Value (High Precision)</th>
+                <th>API / Property</th>
+                <th>Result (High Precision)</th>
             </tr>
         </thead>
-        <tbody id="results-body">
-            </tbody>
+        <tbody id="results"></tbody>
     </table>
 </div>
 
-<div id="svg-container" style="position: absolute; top: -9999px; left: -9999px;">
-    <svg id="test-svg" width="200" height="200" xmlns="http://www.w3.org/2000/svg">
-        <rect id="test-rect" x="10.12345" y="20.6789" width="50" height="50" />
-        <foreignObject id="test-fo" x="0" y="45.54321" width="100" height="100">
-            <div xmlns="http://www.w3.org/1999/xhtml">Probe</div>
+<div id="target-svg">
+    <svg id="probe-svg" width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+        <path id="complex-path" d="M10,10 C20,100 200,100 250,10 S200,250 10,250" fill="none" stroke="black" />
+        
+        <text id="complex-text" x="15.55" y="50.77" font-family="serif" font-size="24.123">
+            BrowserQuirk_123!@#
+        </text>
+
+        <foreignObject id="probe-fo" x="5.1" y="80.9" width="150.5" height="50.5">
+            <div xmlns="http://www.w3.org/1999/xhtml" style="font-size: 12.5px; border: 1px solid red;">
+                Probe
+            </div>
         </foreignObject>
-        <circle id="test-circle" cx="50" cy="50" r="40" />
+
+        <g id="transform-group" transform="matrix(1.1, 0.2, -0.2, 1.1, 10.5, 20.3)">
+            <rect id="test-rect" x="2.5" y="2.5" width="20.1" height="20.1" />
+        </g>
     </svg>
 </div>
 
 <script>
-    function getFingerprint() {
-        const svg = document.getElementById('test-svg');
+    async function runProbe() {
+        const svg = document.getElementById('probe-svg');
+        const path = document.getElementById('complex-path');
+        const text = document.getElementById('complex-text');
+        const fo = document.getElementById('probe-fo');
         const rect = document.getElementById('test-rect');
-        const fo = document.getElementById('test-fo');
-        const circle = document.getElementById('test-circle');
+        const resultsTable = document.getElementById('results');
 
-        const data = {};
+        const metrics = {};
 
-        // 1. SVGSVGElement.createSVGPoint
-        // Checks how the browser initializes point objects
-        const pt = svg.createSVGPoint();
-        data['SVGSVGElement.createSVGPoint'] = `x:${pt.x}, y:${pt.y}`;
+        // 1. SVGGraphicsElement.getBBox (on complex path)
+        const pathBox = path.getBBox();
+        metrics['Path.getBBox'] = `${pathBox.width},${pathBox.height},${pathBox.x}`;
 
-        // 2. SVGGraphicsElement.getBBox
-        // This is the "heavy lifter" for fingerprinting. 
-        // It measures the exact rendering box of the circle.
-        const bbox = circle.getBBox();
-        data['SVGGraphicsElement.getBBox'] = `w:${bbox.width}, h:${bbox.height}, x:${bbox.x}, y:${bbox.y}`;
+        // 2. SVGGraphicsElement.getBBox (on text - high entropy)
+        const textBox = text.getBBox();
+        metrics['Text.getBBox'] = `${textBox.width},${textBox.height}`;
 
-        // 3. SVGRect.y
-        // Captures the raw attribute value from the rect element
-        data['SVGRect.y'] = rect.y.baseVal.value;
+        // 3. SVGRect.y (Direct property access)
+        metrics['SVGRect.y'] = rect.y.baseVal.value;
 
         // 4. SVGForeignObjectElement.y
-        // Different engines handle the coordinate systems of embedded HTML differently
-        data['SVGForeignObjectElement.y'] = fo.y.baseVal.value;
+        metrics['SVGForeignObjectElement.y'] = fo.y.baseVal.value;
 
-        // 5. SVGElement.focus (Availability/Binding check)
-        // Checks if the focus method is available and its binding type
-        data['SVGElement.focus'] = typeof svg.focus === 'function' ? 'Available' : 'Unavailable';
+        // 5. SVGSVGElement.createSVGPoint (Coordinate behavior)
+        const pt = svg.createSVGPoint();
+        metrics['SVGPoint Init'] = `x:${pt.x},y:${pt.y}`;
 
-        displayResults(data);
-    }
+        // 6. SVGElement.focus (Binding/Support test)
+        metrics['SVGElement.focus'] = typeof svg.focus;
 
-    function displayResults(data) {
-        const tbody = document.getElementById('results-body');
-        let combinedString = "";
+        // 7. NEW: getScreenCTM (Matrix math - highly device dependent)
+        const matrix = svg.getScreenCTM();
+        metrics['SVG.getScreenCTM'] = matrix ? `${matrix.a},${matrix.d},${matrix.e}` : 'null';
 
-        for (const [api, value] of Object.entries(data)) {
-            combinedString += value;
-            const row = `<tr>
-                <td class="api-name">${api}</td>
-                <td class="api-value">${value}</td>
-            </tr>`;
-            tbody.innerHTML += row;
+        // 8. NEW: getComputedStyle for SVG (Internal CSS engine quirks)
+        const style = window.getComputedStyle(text);
+        metrics['Text.ComputedFontSize'] = style.fontSize;
+
+        // Display results
+        let entropyString = "";
+        for (let [key, val] of Object.entries(metrics)) {
+            entropyString += val;
+            const row = `<tr><td>${key}</td><td class="api-value">${val}</td></tr>`;
+            resultsTable.innerHTML += row;
         }
 
-        // Simple hash to show uniqueness
-        const hash = btoa(combinedString).substring(0, 16);
-        document.getElementById('fingerprint-hash').textContent = "Browser Signature: " + hash;
+        // Generate Hash
+        const hash = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(entropyString))
+            .then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+        
+        document.getElementById('hash-display').textContent = `ID: ${hash.substring(0, 20).toUpperCase()}`;
     }
 
-    window.onload = getFingerprint;
+    window.onload = runProbe;
 </script>
-
 </body>
 </html>
