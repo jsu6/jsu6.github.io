@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Profiler Fingerprint Research</title>
+<style>
+body { background:#111; color:#0f0; font-family:monospace; padding:20px; }
+pre { white-space:pre-wrap; }
+button { margin-bottom:10px; }
+</style>
+</head>
+<body>
+
+<h2>Profiler API Fingerprint Research</h2>
+<button id="run">Run Profiling</button>
+<pre id="output"></pre>
+
+<script>
+const output = document.getElementById("output");
+
+function log(msg){ output.textContent += msg + "\n"; }
+
+function hash(str){
+  let h=0;
+  for(let i=0;i<str.length;i++)
+    h=Math.imul(31,h)+str.charCodeAt(i)|0;
+  return (h>>>0).toString(16);
+}
+
+// CPU load generator
+function cpuWork() {
+  let x = 0;
+  for (let i = 0; i < 10_000_000; i++) {
+    x += Math.sqrt(i ^ (i >> 3));
+  }
+  return x;
+}
+
+document.getElementById("run").onclick = async () => {
+
+  output.textContent = "";
+
+  if (!("Profiler" in window)) {
+    log("Profiler API not available.");
+    return;
+  }
+
+  const fp = [];
+
+  try {
+    const profiler = new Profiler({
+      sampleInterval: 10,
+      maxBufferSize: 10_000
+    });
+
+    await profiler.start();
+
+    const t0 = performance.now();
+    cpuWork();
+    const t1 = performance.now();
+
+    await profiler.stop();
+
+    const trace = await profiler.getTrace();
+
+    // Basic timing
+    fp.push("cpuDuration:" + (t1 - t0).toFixed(3));
+
+    // Sample count
+    fp.push("sampleCount:" + trace.samples.length);
+
+    // Unique stack depth distribution
+    const depths = trace.samples.map(s => s.stackId);
+    const uniqueDepths = new Set(depths);
+    fp.push("uniqueStackIds:" + uniqueDepths.size);
+
+    // Frame count
+    fp.push("frameCount:" + trace.frames.length);
+
+    // Interval jitter
+    const intervals = [];
+    for (let i = 1; i < trace.samples.length; i++) {
+      intervals.push(
+        (trace.samples[i].timestamp - trace.samples[i-1].timestamp).toFixed(3)
+      );
+    }
+    fp.push("intervalVariance:" + variance(intervals));
+
+  } catch (e) {
+    log("Profiler error: " + e.message);
+  }
+
+  const material = fp.join("|");
+  const finalHash = hash(material);
+
+  log("=== Profiler Fingerprint Material ===");
+  log(material);
+
+  log("\n=== Profiler Fingerprint Hash ===");
+  log(finalHash);
+};
+
+function variance(arr){
+  if (!arr.length) return 0;
+  const nums = arr.map(Number);
+  const mean = nums.reduce((a,b)=>a+b,0)/nums.length;
+  const v = nums.reduce((a,b)=>a+(b-mean)**2,0)/nums.length;
+  return v.toFixed(6);
+}
+</script>
+</body>
+</html>
+
