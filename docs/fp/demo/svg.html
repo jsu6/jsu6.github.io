@@ -1,140 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>SVG Geometry Entropy Study</title>
-<style>
-  body {
-    font-family: system-ui, sans-serif;
-    margin: 20px;
-  }
-
-  #svgContainer {
-    width: 70%;
-    resize: horizontal;
-    overflow: auto;
-    border: 2px solid #333;
-    padding: 10px;
-  }
-
-  svg {
-    width: 100%;
-    height: 350px;
-    border: 1px solid #aaa;
-    background: #f9f9f9;
-  }
-
-  #log {
-    margin-top: 20px;
-    font-family: monospace;
-    white-space: pre-wrap;
-    background: #f4f4f4;
-    padding: 12px;
-    max-height: 400px;
-    overflow: auto;
-  }
-</style>
+<title>SVG Differential Probe</title>
 </head>
 <body>
-
-<h2>SVG Geometry Entropy Measurement</h2>
-<p>
-This page collects SVG layout measurements for academic entropy analysis.
-Resize the container or change zoom level to compare outputs.
-</p>
-
-<div id="svgContainer">
-  <svg id="mysvg" viewBox="0 0 600 350">
-    <rect id="rectA"
-          x="73.3333"
-          y="91.7777"
-          width="213.5555"
-          height="147.4444"
-          fill="steelblue"
-          tabindex="0"/>
-    
-    <foreignObject id="foreignA"
-                   x="310.2222"
-                   y="127.8888"
-                   width="220.3333"
-                   height="120.6666">
-      <div xmlns="http://www.w3.org/1999/xhtml"
-           style="font-size:17.3333px;
-                  line-height:1.2345;
-                  padding:3.14159px;
-                  font-family: system-ui, serif;">
-        Entropy Probe Ω≈ç√∫˜µ≤≥÷
-      </div>
-    </foreignObject>
-  </svg>
-</div>
-
-<button id="run">Collect Measurements</button>
-
-<h3>Measurement Vector</h3>
-<div id="log"></div>
-
 <script>
-const svg = document.getElementById("mysvg");
-const rect = document.getElementById("rectA");
-const foreign = document.getElementById("foreignA");
-const log = document.getElementById("log");
+(function () {
+    function collectSVGSignals() {
+        const results = {};
 
-function collectMeasurements() {
-  // 1. getBBox() geometry
-  const bbox = rect.getBBox();
+        // --- Create SVG Root ---
+        const svgNS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(svgNS, "svg");
+        svg.setAttribute("width", "300");
+        svg.setAttribute("height", "200");
+        document.body.appendChild(svg);
 
-  // 2. SVGRect.y via bbox
-  const rectY = bbox.y;
+        // --- createSVGPoint ---
+        const point = svg.createSVGPoint();
+        point.x = Math.PI;
+        point.y = Math.E;
 
-  // 3. SVGForeignObjectElement.y
-  const foreignY = foreign.y.baseVal.value;
+        results.createSVGPoint_precision = {
+            x: point.x,
+            y: point.y
+        };
 
-  // 4. createSVGPoint + screen CTM transform
-  const point = svg.createSVGPoint();
-  point.x = 123.4567;
-  point.y = 234.5678;
+        // --- SVG Rect ---
+        const rect = document.createElementNS(svgNS, "rect");
+        rect.setAttribute("x", "10.123456789");
+        rect.setAttribute("y", "20.987654321");
+        rect.setAttribute("width", "100.0000001");
+        rect.setAttribute("height", "50.0000001");
+        svg.appendChild(rect);
 
-  const ctm = svg.getScreenCTM();
-  const transformed = point.matrixTransform(ctm);
+        // Access baseVal.y precision
+        results.SVGRect_y_baseVal = rect.y.baseVal.value;
 
-  // 5. Focus behavior measurement
-  rect.focus();
-  const focused = document.activeElement === rect;
+        // --- getBBox ---
+        const bbox = rect.getBBox();
+        results.getBBox = {
+            x: bbox.x,
+            y: bbox.y,
+            width: bbox.width,
+            height: bbox.height
+        };
 
-  // 6. ResizeObserver contentRect
-  const ro = new ResizeObserver(entries => {
-    const entry = entries[0];
+        // --- ForeignObject ---
+        const foreign = document.createElementNS(svgNS, "foreignObject");
+        foreign.setAttribute("x", "5.5555555");
+        foreign.setAttribute("y", "15.3333333");
+        foreign.setAttribute("width", "100");
+        foreign.setAttribute("height", "50");
 
-    const result = {
-      devicePixelRatio: window.devicePixelRatio,
-      svgContentWidth: entry.contentRect.width,
-      svgContentHeight: entry.contentRect.height,
-      rectBBox: {
-        x: bbox.x,
-        y: bbox.y,
-        width: bbox.width,
-        height: bbox.height
-      },
-      rectY: rectY,
-      foreignObjectY: foreignY,
-      transformedPoint: {
-        x: transformed.x,
-        y: transformed.y
-      },
-      focusState: focused
-    };
+        const div = document.createElement("div");
+        div.textContent = "Test";
+        div.style.fontFamily = "Arial";
+        foreign.appendChild(div);
 
-    log.textContent = JSON.stringify(result, null, 2);
-    ro.disconnect();
-  });
+        svg.appendChild(foreign);
 
-  ro.observe(svg);
-}
+        results.SVGForeignObject_y_baseVal = foreign.y.baseVal.value;
 
-document.getElementById("run").addEventListener("click", collectMeasurements);
+        // --- Focus behavior ---
+        rect.setAttribute("tabindex", "0");
+        rect.focus();
+        results.focusedElement = document.activeElement === rect;
+
+        return results;
+    }
+
+    const output = collectSVGSignals();
+    console.log("SVG Differential Signals:", output);
+})();
 </script>
-
 </body>
 </html>
 
