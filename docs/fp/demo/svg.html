@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ResizeObserver + SVG Geometry Demo</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 20px;
+  }
+
+  #container {
+    width: 60%;
+    resize: horizontal;
+    overflow: auto;
+    border: 2px solid #333;
+    padding: 10px;
+  }
+
+  svg {
+    width: 100%;
+    height: 300px;
+    border: 1px solid #999;
+    background: #f8f8f8;
+  }
+
+  #log {
+    margin-top: 20px;
+    font-family: monospace;
+    background: #f4f4f4;
+    padding: 10px;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<h2>SVG + ResizeObserver Geometry Demo</h2>
+<p>Resize the container horizontally to trigger updates.</p>
+
+<div id="container">
+  <svg id="mysvg" viewBox="0 0 500 300">
+    <rect id="myrect" x="50" y="80" width="150" height="100" fill="steelblue" tabindex="0"/>
+    <foreignObject id="myforeign" x="250" y="120" width="200" height="100">
+      <div xmlns="http://www.w3.org/1999/xhtml"
+           style="font-size:16px; background:#fff; padding:5px;">
+        ForeignObject content
+      </div>
+    </foreignObject>
+  </svg>
+</div>
+
+<h3>Live Geometry Data</h3>
+<div id="log">Waiting for resize...</div>
+
+<script>
+const svg = document.getElementById("mysvg");
+const rect = document.getElementById("myrect");
+const foreign = document.getElementById("myforeign");
+const log = document.getElementById("log");
+
+// Focus handling (standard SVG focus)
+rect.addEventListener("click", () => {
+  rect.focus();
+});
+
+// ResizeObserver for SVG element
+const ro = new ResizeObserver(entries => {
+  const entry = entries[0];
+
+  // SVG bounding box (SVGGraphicsElement.getBBox)
+  const bbox = rect.getBBox();
+
+  // Access SVGRect.y via getBBox result
+  const rectY = bbox.y;
+
+  // Access SVGForeignObjectElement.y (baseVal.value)
+  const foreignY = foreign.y.baseVal.value;
+
+  // Create and transform SVGPoint
+  const point = svg.createSVGPoint();
+  point.x = 100;
+  point.y = 100;
+
+  const ctm = svg.getScreenCTM();
+  const screenPoint = point.matrixTransform(ctm);
+
+  const output = {
+    svgContentWidth: entry.contentRect.width,
+    svgContentHeight: entry.contentRect.height,
+    rectBBox: {
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height
+    },
+    rectY: rectY,
+    foreignObjectY: foreignY,
+    transformedPointToScreen: {
+      x: screenPoint.x,
+      y: screenPoint.y
+    },
+    isRectFocused: document.activeElement === rect
+  };
+
+  log.textContent = JSON.stringify(output, null, 2);
+});
+
+ro.observe(svg);
+</script>
+
+</body>
+</html>
+
