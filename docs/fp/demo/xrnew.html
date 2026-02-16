@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>WebXR Fingerprint Demo</title>
+<title>Adaptive WebXR Fingerprint</title>
 <style>
 body { background:#111; color:#0f0; font-family:monospace; padding:20px; }
 pre { white-space:pre-wrap; }
@@ -11,22 +11,46 @@ button { margin-bottom:10px; }
 </head>
 <body>
 
-<h2>WebXR Fingerprint Demonstration</h2>
-<button id="start">Start XR Fingerprint</button>
+<h2>Adaptive WebXR Fingerprint</h2>
+<button id="start">Start Fingerprint</button>
 <pre id="output"></pre>
 
 <script>
 const output = document.getElementById("output");
 
-function log(text) {
-  output.textContent += text + "\n";
+function log(msg) {
+  output.textContent += msg + "\n";
 }
 
-function simpleHash(str) {
+function hash(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++)
     h = Math.imul(31, h) + str.charCodeAt(i) | 0;
   return (h >>> 0).toString(16);
+}
+
+async function detectSupportedFeatures() {
+  const candidates = [
+    "anchors",
+    "hit-test",
+    "depth-sensing",
+    "plane-detection",
+    "image-tracking"
+  ];
+
+  const supported = [];
+
+  for (const feature of candidates) {
+    try {
+      const s = await navigator.xr.requestSession("immersive-ar", {
+        requiredFeatures: [feature]
+      });
+      await s.end();
+      supported.push(feature);
+    } catch {}
+  }
+
+  return supported;
 }
 
 document.getElementById("start").onclick = async () => {
@@ -36,137 +60,143 @@ document.getElementById("start").onclick = async () => {
     return;
   }
 
-  const fingerprintData = [];
+  const arSupported = await navigator.xr.isSessionSupported("immersive-ar");
+  if (!arSupported) {
+    log("immersive-ar not supported.");
+    return;
+  }
 
-  try {
-    const session = await navigator.xr.requestSession("immersive-ar", {
-      requiredFeatures: [
-        "anchors",
-        "hit-test",
-        "depth-sensing",
-        "plane-detection",
-        "image-tracking"
-      ]
-    });
+  const supportedFeatures = await detectSupportedFeatures();
+  log("Supported Features: " + supportedFeatures.join(", "));
 
-    fingerprintData.push("sessionMode:immersive-ar");
+  const session = await navigator.xr.requestSession("immersive-ar", {
+    requiredFeatures: supportedFeatures
+  });
 
-    // XRSessionEvent.session
-    session.addEventListener("end", (e) => {
-      fingerprintData.push("sessionEventSession:" + !!e.session);
-    });
+  const fingerprint = [];
 
-    // XRSession.inputSources
-    fingerprintData.push("inputSourcesCount:" + session.inputSources.length);
+  fingerprint.push("features:" + supportedFeatures.join(","));
 
-    // XRSession.getTrackedImageScores
-    if (session.getTrackedImageScores) {
+  // XRSession.inputSources
+  fingerprint.push("initialInputCount:" + session.inputSources.length);
+
+  session.addEventListener("inputsourceschange", (e) => {
+    fingerprint.push("inputsAdded:" + e.added.length);
+    fingerprint.push("inputsRemoved:" + e.removed.length);
+    fingerprint.push("eventSession:" + !!e.session);
+  });
+
+  session.addEventListener("end", (e) => {
+    fingerprint.push("endEventSession:" + !!e.session);
+  });
+
+  if (session.getTrackedImageScores) {
+    try {
       const scores = await session.getTrackedImageScores();
-      fingerprintData.push("trackedImageScores:" + scores.join(","));
+      fingerprint.push("imageScores:" + scores.join(","));
+    } catch {}
+  }
+
+  const refSpace = await session.requestReferenceSpace("local");
+
+  session.requestAnimationFrame(function onFrame(time, frame) {
+
+    const pose = frame.getViewerPose(refSpace);
+
+    if (pose) {
+      fingerprint.push("viewCount:" + pose.views.length);
     }
 
-    // XRInputSourcesChangeEvent
-    session.addEventListener("inputsourceschange", (event) => {
-      fingerprintData.push("inputsAdded:" + event.added.length);
-      fingerprintData.push("inputsRemoved:" + event.removed.length);
-      fingerprintData.push("inputSessionExists:" + !!event.session);
-    });
+    // XRViewerPose.views
+    if (pose && pose.views.length) {
 
-    const refSpace = await session.requestReferenceSpace("local");
+      const view = pose.views[0];
 
-    session.requestAnimationFrame(function onFrame(time, frame) {
-
-      // XRViewerPose.views
-      const pose = frame.getViewerPose(refSpace);
-      if (pose) {
-        fingerprintData.push("viewCount:" + pose.views.length);
-      }
-
-      // XRInputSource properties
-      for (const source of session.inputSources) {
-        fingerprintData.push("handedness:" + source.handedness);
-        fingerprintData.push("hasTargetRaySpace:" + !!source.targetRaySpace);
-      }
-
-      // Depth sensing
+      // Depth
       if (frame.getDepthInformation) {
-        const depthInfo = frame.getDepthInformation(pose.views[0]);
-        if (depthInfo) {
-          fingerprintData.push("rawValueToMeters:" + depthInfo.rawValueToMeters);
-        }
-      }
-
-      // Plane detection
-      if (frame.detectedPlanes) {
-        for (const plane of frame.detectedPlanes) {
-          fingerprintData.push("planeLastChanged:" + plane.lastChangedTime);
-        }
-      }
-
-      // Hit test → XRHitTestResult.createAnchor
-      if (frame.getHitTestResults) {
-        const hitResults = frame.getHitTestResults([]);
-        for (const hit of hitResults) {
-          if (hit.createAnchor) {
-            hit.createAnchor().then(anchor => {
-              fingerprintData.push("hitAnchorCreated:true");
-            }).catch(()=>{});
+        try {
+          const depth = frame.getDepthInformation(view);
+          if (depth) {
+            fingerprint.push("rawValueToMeters:" + depth.rawValueToMeters);
           }
-        }
-      }
-
-      // XRFrame.createAnchor
-      if (frame.createAnchor) {
-        frame.createAnchor(new XRRigidTransform())
-          .then(anchor => {
-            fingerprintData.push("frameAnchorCreated:true");
-          }).catch(()=>{});
-      }
-
-      // XRRigidTransform.inverse
-      const transform = new XRRigidTransform();
-      fingerprintData.push("inverseMatrixExists:" + !!transform.inverse);
-
-      // XRImageTrackingResult.index
-      if (frame.getImageTrackingResults) {
-        const results = frame.getImageTrackingResults();
-        for (const r of results) {
-          fingerprintData.push("imageIndex:" + r.index);
-        }
+        } catch {}
       }
 
       // XRGPUSubImage
       if (frame.getViewSubImage) {
         try {
-          const subImage = frame.getViewSubImage(pose.views[0]);
-          fingerprintData.push("hasColorTexture:" + !!subImage.colorTexture);
+          const subImage = frame.getViewSubImage(view);
+          fingerprint.push("hasColorTexture:" + !!subImage.colorTexture);
 
           if (subImage.getViewDescriptor) {
             const desc = subImage.getViewDescriptor();
-            fingerprintData.push("viewDescriptorWidth:" + desc.width);
-            fingerprintData.push("viewDescriptorHeight:" + desc.height);
+            fingerprint.push("viewWidth:" + desc.width);
+            fingerprint.push("viewHeight:" + desc.height);
           }
         } catch {}
       }
+    }
 
-      // Finalize fingerprint after first frame
-      setTimeout(() => {
-        const material = fingerprintData.join("|");
-        const hash = simpleHash(material);
+    // Input sources
+    for (const source of session.inputSources) {
+      fingerprint.push("handedness:" + source.handedness);
+      fingerprint.push("hasTargetRaySpace:" + !!source.targetRaySpace);
+    }
 
-        log("=== Fingerprint Material ===");
-        log(material);
+    // Plane detection
+    if (frame.detectedPlanes) {
+      for (const plane of frame.detectedPlanes) {
+        fingerprint.push("planeLastChanged:" + plane.lastChangedTime);
+      }
+    }
 
-        log("\n=== Fingerprint Hash ===");
-        log(hash);
+    // Anchors
+    if (frame.createAnchor) {
+      frame.createAnchor(new XRRigidTransform())
+        .then(() => fingerprint.push("frameAnchor:true"))
+        .catch(() => fingerprint.push("frameAnchor:false"));
+    }
 
-        session.end();
-      }, 1000);
-    });
+    // Hit test
+    if (frame.getHitTestResults) {
+      try {
+        const hits = frame.getHitTestResults([]);
+        fingerprint.push("hitCount:" + hits.length);
+        for (const hit of hits) {
+          if (hit.createAnchor) {
+            hit.createAnchor()
+              .then(() => fingerprint.push("hitAnchor:true"))
+              .catch(() => fingerprint.push("hitAnchor:false"));
+          }
+        }
+      } catch {}
+    }
 
-  } catch (err) {
-    log("XR Error: " + err.message);
-  }
+    // XRRigidTransform.inverse
+    const t = new XRRigidTransform();
+    fingerprint.push("inverseExists:" + !!t.inverse);
+
+    // Image tracking
+    if (frame.getImageTrackingResults) {
+      const results = frame.getImageTrackingResults();
+      for (const r of results) {
+        fingerprint.push("imageIndex:" + r.index);
+      }
+    }
+
+    setTimeout(() => {
+      const material = fingerprint.join("|");
+      const finalHash = hash(material);
+
+      log("\n=== Fingerprint Material ===");
+      log(material);
+
+      log("\n=== Fingerprint Hash ===");
+      log(finalHash);
+
+      session.end();
+    }, 1000);
+  });
 };
 </script>
 
