@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ResizeObserver Fingerprint Demo</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    padding: 20px;
+  }
+  #output {
+    white-space: pre-wrap;
+    font-family: monospace;
+    background: #f5f5f5;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+  }
+  .probe {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+    box-sizing: content-box;
+  }
+</style>
+</head>
+<body>
+
+<h2>ResizeObserver Fingerprinting Demonstration</h2>
+<p>
+This page measures subpixel layout behavior using
+<code>ResizeObserverEntry.contentRect</code> and
+<code>ResizeObserverEntry.borderBoxSize</code>.
+</p>
+
+<button id="run">Run Fingerprint</button>
+
+<h3>Result:</h3>
+<div id="output"></div>
+
+<script>
+async function hashString(str) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function createProbe(fontFamily, writingMode) {
+  const el = document.createElement("div");
+  el.className = "probe";
+  el.style.cssText = `
+    width: 137.3333px;
+    padding: 3.14159px;
+    border: 1.5px solid black;
+    font-family: ${fontFamily};
+    font-size: 13.3333px;
+    line-height: 1.2345;
+    writing-mode: ${writingMode};
+  `;
+  el.textContent = "Fingerprint probe — Ω≈ç√∫˜µ≤≥÷";
+  document.body.appendChild(el);
+  return el;
+}
+
+async function runFingerprint() {
+  const fonts = [
+    "system-ui",
+    "serif",
+    "monospace",
+    "'Times New Roman'",
+    "'Arial'",
+    "'Segoe UI'"
+  ];
+
+  const writingModes = ["horizontal-tb", "vertical-rl"];
+  const results = [];
+
+  const promises = [];
+
+  fonts.forEach(font => {
+    writingModes.forEach(mode => {
+      const el = createProbe(font, mode);
+
+      promises.push(new Promise(resolve => {
+        const ro = new ResizeObserver(entries => {
+          const entry = entries[0];
+
+          const borderBox = entry.borderBoxSize
+            ? (Array.isArray(entry.borderBoxSize)
+              ? entry.borderBoxSize[0]
+              : entry.borderBoxSize)
+            : null;
+
+          const measurement = {
+            font,
+            writingMode: mode,
+            contentWidth: entry.contentRect.width,
+            contentHeight: entry.contentRect.height,
+            borderInlineSize: borderBox?.inlineSize ?? null,
+            borderBlockSize: borderBox?.blockSize ?? null,
+            devicePixelRatio: window.devicePixelRatio
+          };
+
+          results.push(measurement);
+          ro.disconnect();
+          el.remove();
+          resolve();
+        });
+
+        ro.observe(el);
+      }));
+    });
+  });
+
+  await Promise.all(promises);
+
+  const serialized = JSON.stringify(results, null, 2);
+  const hash = await hashString(serialized);
+
+  document.getElementById("output").textContent =
+    "Raw Measurements:\n\n" +
+    serialized +
+    "\n\nSHA-256 Fingerprint:\n\n" +
+    hash;
+}
+
+document.getElementById("run").addEventListener("click", runFingerprint);
+</script>
+
+</body>
+</html>
+
