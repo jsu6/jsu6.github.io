@@ -2,123 +2,97 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SVG API Differential Display Harness</title>
+<title>SVG Differential Research Harness</title>
 <style>
-    body { font-family: monospace; white-space: pre-wrap; }
-    .section { margin-bottom: 30px; }
-    .header { font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+    h1 { color: #fff; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    .section { margin-bottom: 20px; }
 </style>
 </head>
 <body>
+
+<h1>SVG Fingerprinting Differential Output</h1>
 <div id="output"></div>
 
 <script>
 (function () {
 
     const svgNS = "http://www.w3.org/2000/svg";
-    const output = document.getElementById("output");
+    const results = {};
 
-    function writeSection(title, data) {
-        const div = document.createElement("div");
-        div.className = "section";
-        div.innerHTML = "<div class='header'>" + title + "</div>" +
-                        "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
-        output.appendChild(div);
+    function addSection(title, data) {
+        const container = document.getElementById("output");
+        const section = document.createElement("div");
+        section.className = "section";
+
+        const heading = document.createElement("h2");
+        heading.textContent = title;
+
+        const pre = document.createElement("pre");
+        pre.textContent = JSON.stringify(data, null, 2);
+
+        section.appendChild(heading);
+        section.appendChild(pre);
+        container.appendChild(section);
     }
 
-    function enumerateAll(obj) {
-        const props = {};
-        let current = obj;
-
-        while (current) {
-            Object.getOwnPropertyNames(current).forEach(name => {
-                if (!props[name]) {
-                    try {
-                        props[name] = {
-                            type: typeof obj[name],
-                            value: safeRead(obj[name]),
-                            descriptor: Object.getOwnPropertyDescriptor(current, name)
-                        };
-                    } catch (e) {
-                        props[name] = { error: e.toString() };
-                    }
-                }
-            });
-            current = Object.getPrototypeOf(current);
-        }
-
-        return props;
-    }
-
-    function safeRead(value) {
-        try {
-            if (typeof value === "function") return "[Function]";
-            if (typeof value === "object" && value !== null)
-                return Object.prototype.toString.call(value);
-            return value;
-        } catch (e) {
-            return "Unreadable";
-        }
-    }
-
-    function floatVariants(num) {
-        return {
-            raw: num,
-            toString: num.toString(),
-            toFixed_20: num.toFixed(20),
-            toPrecision_21: num.toPrecision(21),
-            json: JSON.stringify(num)
-        };
-    }
-
-    // --- SVG ROOT ---
+    // ---- SVG ROOT ----
     const svg = document.createElementNS(svgNS, "svg");
     svg.setAttribute("width", "300");
     svg.setAttribute("height", "200");
     document.body.appendChild(svg);
 
-    writeSection("SVGSVGElement Prototype Chain", enumerateAll(svg));
-
-    // --- createSVGPoint ---
+    // ---- createSVGPoint Precision ----
     const point = svg.createSVGPoint();
     point.x = Math.PI;
     point.y = Math.E;
 
-    writeSection("createSVGPoint Object Enumeration", enumerateAll(point));
-    writeSection("createSVGPoint Float Precision", {
-        x: floatVariants(point.x),
-        y: floatVariants(point.y)
-    });
+    results.createSVGPoint = {
+        x_raw: point.x,
+        y_raw: point.y,
+        x_string: point.x.toString(),
+        y_string: point.y.toString()
+    };
 
-    // --- SVGRect ---
+    // ---- SVG Rect ----
     const rect = document.createElementNS(svgNS, "rect");
     rect.setAttribute("x", "10.123456789");
     rect.setAttribute("y", "20.987654321");
     rect.setAttribute("width", "100.0000001");
     rect.setAttribute("height", "50.0000001");
+    rect.setAttribute("fill", "red");
     rect.setAttribute("tabindex", "0");
+
     svg.appendChild(rect);
 
-    writeSection("SVGRect Full Enumeration", enumerateAll(rect));
+    results.SVGRect_y = {
+        baseVal: rect.y.baseVal.value,
+        animVal: rect.y.animVal.value
+    };
 
-    writeSection("SVGRect BaseVal Precision", {
-        x: floatVariants(rect.x.baseVal.value),
-        y: floatVariants(rect.y.baseVal.value),
-        width: floatVariants(rect.width.baseVal.value),
-        height: floatVariants(rect.height.baseVal.value)
-    });
-
-    // --- getBBox ---
+    // ---- getBBox ----
     const bbox = rect.getBBox();
-    writeSection("getBBox Enumeration", enumerateAll(bbox));
-    writeSection("getBBox Precision", {
-        x: floatVariants(bbox.x),
-        y: floatVariants(bbox.y),
-        width: floatVariants(bbox.width),
-        height: floatVariants(bbox.height)
-    });
 
-    // --- ForeignObject ---
+    results.getBBox = {
+        x: bbox.x,
+        y: bbox.y,
+        width: bbox.width,
+        height: bbox.height
+    };
+
+    // ---- getScreenCTM Matrix Precision ----
+    const ctm = rect.getScreenCTM();
+    results.getScreenCTM = {
+        a: ctm.a,
+        b: ctm.b,
+        c: ctm.c,
+        d: ctm.d,
+        e: ctm.e,
+        f: ctm.f
+    };
+
+    // ---- ForeignObject ----
     const foreign = document.createElementNS(svgNS, "foreignObject");
     foreign.setAttribute("x", "5.5555555");
     foreign.setAttribute("y", "15.3333333");
@@ -126,33 +100,44 @@
     foreign.setAttribute("height", "50");
 
     const div = document.createElement("div");
-    div.textContent = "ForeignObject Test";
+    div.textContent = "Test";
     div.style.fontFamily = "Arial";
+    div.style.fontSize = "16px";
+
     foreign.appendChild(div);
     svg.appendChild(foreign);
 
-    writeSection("SVGForeignObject Enumeration", enumerateAll(foreign));
+    results.SVGForeignObject_y = {
+        baseVal: foreign.y.baseVal.value,
+        animVal: foreign.y.animVal.value
+    };
 
-    writeSection("SVGForeignObject BaseVal Precision", {
-        x: floatVariants(foreign.x.baseVal.value),
-        y: floatVariants(foreign.y.baseVal.value)
-    });
-
-    // --- Focus Behavior ---
+    // ---- Focus Behavior ----
     rect.focus();
-    writeSection("Focus State", {
+    results.focus = {
         activeElementTag: document.activeElement.tagName,
         isRectFocused: document.activeElement === rect
-    });
+    };
 
-    // --- Feature Detection ---
-    writeSection("Feature Detection", {
-        has_focusForBindings: typeof rect.focusForBindings === "function",
-        has_getBBoxFromJavascript: typeof rect.getBBoxFromJavascript === "function"
-    });
+    // ---- Float Rounding Differential ----
+    const floatTest = 0.1 + 0.2;
+    results.floatPrecision = {
+        "0.1+0.2": floatTest,
+        equalityToPoint3: floatTest === 0.3
+    };
+
+    // ---- Serialized SVG Output ----
+    const serializer = new XMLSerializer();
+    results.serializedSVG = serializer.serializeToString(svg);
+
+    // ---- Display All Results ----
+    for (const key in results) {
+        addSection(key, results[key]);
+    }
 
 })();
 </script>
+
 </body>
 </html>
 
