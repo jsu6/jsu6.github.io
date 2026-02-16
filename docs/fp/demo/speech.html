@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Speech API Diagnostics</title>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    button { margin: 5px 0; }
+    pre { background: #111; color: #0f0; padding: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+<h2>Speech API Full Diagnostic</h2>
+
+<button id="installBtn">Install On-Device Speech Recognition</button>
+<button id="checkAvailabilityBtn">Check On-Device Availability</button>
+<button id="listVoicesBtn">List Speech Synthesis Voices</button>
+<button id="startRecognitionBtn">Start Recognition</button>
+
+<pre id="output"></pre>
+
+<script>
+const output = document.getElementById("output");
+
+function log(title, data) {
+  output.textContent += `\n=== ${title} ===\n`;
+  output.textContent += typeof data === "object"
+    ? JSON.stringify(data, null, 2)
+    : String(data);
+  output.textContent += "\n";
+}
+
+/* ---------------------------------------------------------
+   Setup SpeechRecognition
+--------------------------------------------------------- */
+
+const SpeechRecognition =
+  window.SpeechRecognition ||
+  window.webkitSpeechRecognition;
+
+if (!SpeechRecognition) {
+  log("SpeechRecognition Support", "NOT SUPPORTED in this browser.");
+} else {
+  log("SpeechRecognition Support", "Supported.");
+}
+
+/* ---------------------------------------------------------
+    installOnDeviceSpeechRecognition
+--------------------------------------------------------- */
+
+document.getElementById("installBtn").addEventListener("click", async () => {
+  if (!SpeechRecognition) return;
+
+  if (typeof SpeechRecognition.installOnDeviceSpeechRecognition === "function") {
+    try {
+      const result = await SpeechRecognition.installOnDeviceSpeechRecognition();
+      log("installOnDeviceSpeechRecognition Result", result);
+    } catch (err) {
+      log("installOnDeviceSpeechRecognition Error", err.message);
+    }
+  } else {
+    log("installOnDeviceSpeechRecognition", "Method NOT available.");
+  }
+});
+
+/* ---------------------------------------------------------
+    onDeviceWebSpeechAvailable
+--------------------------------------------------------- */
+
+document.getElementById("checkAvailabilityBtn").addEventListener("click", async () => {
+  if (!SpeechRecognition) return;
+
+  if (typeof SpeechRecognition.onDeviceWebSpeechAvailable === "function") {
+    try {
+      const result = await SpeechRecognition.onDeviceWebSpeechAvailable();
+      log("onDeviceWebSpeechAvailable Result", result);
+    } catch (err) {
+      log("onDeviceWebSpeechAvailable Error", err.message);
+    }
+  } else {
+    log("onDeviceWebSpeechAvailable", "Method NOT available.");
+  }
+});
+
+/* ---------------------------------------------------------
+    Speech Recognition Runtime Events
+--------------------------------------------------------- */
+
+document.getElementById("startRecognitionBtn").addEventListener("click", () => {
+  if (!SpeechRecognition) return;
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.continuous = false;
+  recognition.interimResults = true;
+
+  recognition.onstart = () => log("Recognition Event", "onstart");
+  recognition.onaudiostart = () => log("Recognition Event", "onaudiostart");
+  recognition.onsoundstart = () => log("Recognition Event", "onsoundstart");
+  recognition.onspeechstart = () => log("Recognition Event", "onspeechstart");
+
+  recognition.onresult = (event) => {
+    const results = [];
+    for (let i = 0; i < event.results.length; i++) {
+      const result = event.results[i];
+      const alternatives = [];
+      for (let j = 0; j < result.length; j++) {
+        alternatives.push({
+          transcript: result[j].transcript,
+          confidence: result[j].confidence
+        });
+      }
+      results.push({
+        isFinal: result.isFinal,
+        alternatives
+      });
+    }
+    log("Recognition Results", results);
+  };
+
+  recognition.onerror = (event) => log("Recognition Error", event.error);
+  recognition.onend = () => log("Recognition Event", "onend");
+
+  recognition.start();
+});
+
+/* ---------------------------------------------------------
+    SpeechSynthesisVoice Enumeration
+--------------------------------------------------------- */
+
+document.getElementById("listVoicesBtn").addEventListener("click", () => {
+  if (!window.speechSynthesis) {
+    log("SpeechSynthesis", "NOT SUPPORTED.");
+    return;
+  }
+
+  const voices = speechSynthesis.getVoices();
+
+  if (!voices.length) {
+    log("SpeechSynthesis Voices", "No voices yet (may need to wait for voiceschanged event).");
+  }
+
+  const voiceData = voices.map(v => ({
+    name: v.name,
+    lang: v.lang,              // required property
+    voiceURI: v.voiceURI,      // required property
+    default: v.default,
+    localService: v.localService
+  }));
+
+  log("SpeechSynthesis Voices", voiceData);
+});
+
+/* Handle async voice loading */
+if (window.speechSynthesis) {
+  speechSynthesis.onvoiceschanged = () => {
+    log("SpeechSynthesis Event", "voiceschanged fired.");
+  };
+}
+
+</script>
+</body>
+</html>
+
