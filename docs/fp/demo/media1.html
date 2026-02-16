@@ -1,153 +1,193 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8" />
+<meta charset="utf-8">
 <title>Media API Fingerprinting PoC</title>
 <style>
   body { font-family: monospace; padding: 20px; }
-  button { margin-right: 10px; }
-  pre { background: #111; color: #0f0; padding: 15px; overflow:auto; }
+  button { margin: 6px 6px 6px 0; }
+  pre { background: #111; color: #0f0; padding: 15px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 
-<h2>Media API Fingerprinting PoC</h2>
+<h2>Media API Fingerprint PoC</h2>
 
-<button onclick="runFingerprint()">Run Fingerprint</button>
-<button onclick="requestMedia()">Request Camera/Mic</button>
-
-<pre id="output">Click "Run Fingerprint"</pre>
+<button onclick="runAll()">Run Media Fingerprint</button>
+<pre id="out">Click button to run</pre>
 
 <script>
-const output = document.getElementById("output");
+const out = document.getElementById("out");
 
-function log(obj) {
-  output.textContent = JSON.stringify(obj, null, 2);
+function print(obj) {
+  out.textContent = JSON.stringify(obj, null, 2);
 }
 
 async function sha256(str) {
-  const buf = new TextEncoder().encode(str);
-  const hash = await crypto.subtle.digest("SHA-256", buf);
+  const data = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest("SHA-256", data);
   return Array.from(new Uint8Array(hash))
     .map(b => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
+/* -------------------------------------------------- */
+/* 1. MediaKeySystemAccess.getConfiguration() */
+/* -------------------------------------------------- */
 async function probeEME() {
-  const keySystems = [
+  const systems = [
     "com.widevine.alpha",
     "com.microsoft.playready",
     "com.apple.fps.1_0"
   ];
 
-  const results = {};
+  const result = {};
 
-  for (const ks of keySystems) {
+  for (const ks of systems) {
     try {
       const config = [{
         initDataTypes: ["cenc"],
-        videoCapabilities: [
-          { contentType: 'video/mp4; codecs="avc1.640028"' },
-          { contentType: 'video/webm; codecs="vp09.00.51.08"' }
-        ],
-        audioCapabilities: [
-          { contentType: 'audio/mp4; codecs="mp4a.40.2"' }
-        ],
+        audioCapabilities: [{
+          contentType: 'audio/mp4; codecs="mp4a.40.2"'
+        }],
+        videoCapabilities: [{
+          contentType: 'video/mp4; codecs="avc1.640028"',
+          robustness: "SW_SECURE_DECODE"
+        }],
         persistentState: "optional",
         distinctiveIdentifier: "optional"
       }];
 
       const access = await navigator.requestMediaKeySystemAccess(ks, config);
-      const conf = access.getConfiguration();
-      results[ks] = conf;
+      result[ks] = access.getConfiguration();
     } catch (e) {
-      results[ks] = "unsupported";
+      result[ks] = "unsupported";
     }
   }
 
-  return results;
+  return result;
 }
 
+/* -------------------------------------------------- */
+/* 2. MediaList.length */
+/* -------------------------------------------------- */
+function probeMediaList() {
+  const list = document.styleSheets[0]?.media;
+  if (!list) return "no-stylesheet-media";
+
+  return {
+    mediaText: list.mediaText,
+    length: list.length
+  };
+}
+
+/* -------------------------------------------------- */
+/* 3. MediaSource.addSourceBuffer() */
+/* -------------------------------------------------- */
 function probeMSE() {
-  const types = [
+  const codecs = [
     'video/mp4; codecs="avc1.640028"',
     'video/mp4; codecs="hev1.1.6.L93.B0"',
     'video/webm; codecs="vp09.00.51.08"',
     'video/webm; codecs="av01.0.05M.08"'
   ];
 
-  const results = {};
-  types.forEach(t => {
-    results[t] = MediaSource.isTypeSupported(t);
-  });
+  const support = {};
 
-  return results;
+  for (const type of codecs) {
+    support[type] = MediaSource.isTypeSupported(type);
+  }
+
+  return support;
 }
 
-async function probeMediaDevices() {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  return devices.map(d => ({
-    kind: d.kind,
-    label: d.label,
-    deviceId: d.deviceId,
-    groupId: d.groupId
-  }));
+/* -------------------------------------------------- */
+/* 4–7. MediaStream & Stats */
+/* -------------------------------------------------- */
+async function probeMediaStream() {
+  const data = {};
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: true
+    });
+
+    /* MediaStream.getVideoTracks */
+    const videoTracks = stream.getVideoTracks();
+    data.videoTrackCount = videoTracks.length;
+    data.videoTracks = videoTracks.map(t => ({
+      id: t.id,
+      label: t.label,
+      settings: t.getSettings(),
+      capabilities: t.getCapabilities?.()
+    }));
+
+    /* MediaStreamTrackEvent.track */
+    const trackEventInfo = {};
+    stream.addEventListener("addtrack", e => {
+      trackEventInfo.kind = e.track.kind;
+      trackEventInfo.id = e.track.id;
+    });
+    data.trackEvent = trackEventInfo;
+
+    /* RTCPeerConnection stats (deliveredFrames / totalFrames equivalent) */
+    const pc = new RTCPeerConnection();
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+    const stats = await pc.getStats();
+    const statSummary = [];
+
+    stats.forEach(report => {
+      if (report.type === "outbound-rtp" || report.type === "track") {
+        statSummary.push({
+          type: report.type,
+          framesSent: report.framesSent,
+          framesEncoded: report.framesEncoded,
+          totalSamplesSent: report.totalSamplesSent
+        });
+      }
+    });
+
+    data.rtcStats = statSummary;
+
+    stream.getTracks().forEach(t => t.stop());
+    pc.close();
+
+  } catch (e) {
+    data.error = e.message;
+  }
+
+  return data;
 }
 
-async function probeAudioStats(stream) {
-  const track = stream.getAudioTracks()[0];
-  if (!track) return "no-audio-track";
+/* -------------------------------------------------- */
+/* Run Everything */
+/* -------------------------------------------------- */
+async function runAll() {
 
-  const stats = track.getSettings();
-
-  return {
-    sampleRate: stats.sampleRate,
-    channelCount: stats.channelCount,
-    latency: stats.latency
-  };
-}
-
-async function runFingerprint() {
   const fingerprint = {};
 
   fingerprint.userAgent = navigator.userAgent;
   fingerprint.platform = navigator.platform;
 
   fingerprint.eme = await probeEME();
+  fingerprint.mediaList = probeMediaList();
   fingerprint.mse = probeMSE();
+  fingerprint.mediaStream = await probeMediaStream();
 
-  try {
-    fingerprint.devices = await probeMediaDevices();
-  } catch (e) {
-    fingerprint.devices = "enumeration-blocked";
-  }
+  fingerprint.hash = await sha256(JSON.stringify(fingerprint));
 
-  const serialized = JSON.stringify(fingerprint);
-  fingerprint.hash = await sha256(serialized);
-
-  log(fingerprint);
+  print(fingerprint);
 }
 
-async function requestMedia() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    const audioStats = await probeAudioStats(stream);
-
-    const videoTracks = stream.getVideoTracks().map(t => ({
-      label: t.label,
-      settings: t.getSettings()
-    }));
-
-    log({
-      audioStats,
-      videoTracks
-    });
-
-  } catch (e) {
-    log({ error: e.message });
-  }
-}
 </script>
+
+<style>
+@media screen and (min-width: 800px) {
+  body { background: #222; }
+}
+</style>
 
 </body>
 </html>
