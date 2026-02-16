@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>VideoFrame Diagnostic</title>
+<style>
+body { font-family: monospace; padding:20px; background:#111; color:#0f0; }
+button { margin: 10px 0; }
+pre { white-space: pre-wrap; }
+canvas { border:1px solid #555; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<h2>VideoFrame Property Diagnostic</h2>
+<button id="runBtn">Create & Inspect VideoFrame</button>
+
+<pre id="output"></pre>
+<canvas id="canvas" width="320" height="240"></canvas>
+
+<script>
+const output = document.getElementById("output");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+function log(title, data) {
+  output.textContent += `\n=== ${title} ===\n`;
+  output.textContent += typeof data === "object"
+    ? JSON.stringify(data, null, 2)
+    : String(data);
+  output.textContent += "\n";
+}
+
+document.getElementById("runBtn").addEventListener("click", async () => {
+
+  if (typeof VideoFrame === "undefined") {
+    log("WebCodecs Support", "VideoFrame is NOT supported.");
+    return;
+  }
+
+  output.textContent = "";
+
+  // Draw something into canvas
+  ctx.fillStyle = "red";
+  ctx.fillRect(0, 0, 320, 240);
+
+  // Create VideoFrame from canvas
+  const frame = new VideoFrame(canvas, {
+    timestamp: 123456
+  });
+
+  try {
+    const properties = {
+      codedWidth: frame.codedWidth,
+      codedHeight: frame.codedHeight,          // required
+      displayWidth: frame.displayWidth,        // required
+      displayHeight: frame.displayHeight,
+      duration: frame.duration,
+      format: frame.format,
+      timestamp: frame.timestamp,
+      colorSpace: frame.colorSpace ? {
+        primaries: frame.colorSpace.primaries,
+        transfer: frame.colorSpace.transfer,
+        matrix: frame.colorSpace.matrix,
+        fullRange: frame.colorSpace.fullRange
+      } : null,
+      visibleRect: frame.visibleRect
+    };
+
+    log("VideoFrame Properties", properties);
+
+    // Attempt structured clone test
+    try {
+      const cloned = structuredClone(frame);
+      log("Structured Clone", "Success");
+      cloned.close();
+    } catch (e) {
+      log("Structured Clone", "Failed: " + e.message);
+    }
+
+  } catch (err) {
+    log("Error Inspecting Frame", err.message);
+  }
+
+  frame.close();
+});
+</script>
+
+</body>
+</html>
+
