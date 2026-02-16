@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>File Picker + Popup Size Measurement</title>
+</head>
+<body>
+  <button id="openFileBtn">Open File Picker</button>
+  <button id="openPopupBtn">Open Popup & Measure Size</button>
+
+  <pre id="output"></pre>
+
+  <script>
+    const output = document.getElementById("output");
+
+    function log(message) {
+      output.textContent += message + "\n";
+    }
+
+    // 1️⃣ Use Window.showOpenFilePicker
+    document.getElementById("openFileBtn").addEventListener("click", async () => {
+      try {
+        const [fileHandle] = await window.showOpenFilePicker({
+          multiple: false
+        });
+
+        const file = await fileHandle.getFile();
+
+        log("Selected file: " + file.name);
+        log("File size: " + file.size + " bytes");
+
+        // Measure current window size
+        log("\nMain Window Measurements:");
+        log("innerWidth: " + window.innerWidth);
+        log("innerHeight: " + window.innerHeight);
+        log("outerWidth: " + window.outerWidth);
+        log("outerHeight: " + window.outerHeight);
+      } catch (err) {
+        log("File picker cancelled or failed: " + err.message);
+      }
+    });
+
+    // 2️⃣ Open popup and measure its size
+    document.getElementById("openPopupBtn").addEventListener("click", () => {
+      const popup = window.open(
+        "",
+        "popupWindow",
+        "width=500,height=400,resizable=yes"
+      );
+
+      if (!popup) {
+        log("Popup blocked by browser.");
+        return;
+      }
+
+      popup.document.write("<h2>Popup Window</h2>");
+      popup.document.close();
+
+      // Wait briefly for layout
+      setTimeout(() => {
+        log("\nPopup Measurements:");
+        log("innerWidth: " + popup.innerWidth);
+        log("innerHeight: " + popup.innerHeight);
+        log("outerWidth: " + popup.outerWidth);
+        log("outerHeight: " + popup.outerHeight);
+      }, 300);
+    });
+  </script>
+</body>
+</html>
+
