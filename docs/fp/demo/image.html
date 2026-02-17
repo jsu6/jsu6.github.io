@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ImageCapture API Inspection</title>
+  <style>
+    body { font-family: monospace; background:#111; color:#0f0; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    video, canvas, img { max-width: 400px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+
+<h2>ImageCapture API Inspection Tool</h2>
+<button id="start">Start Camera</button>
+
+<h3>Video Preview</h3>
+<video id="video" autoplay playsinline></video>
+
+<h3>Grabbed Frame (grabFrame)</h3>
+<canvas id="frameCanvas"></canvas>
+
+<h3>Taken Photo (takePhoto)</h3>
+<img id="photo" />
+
+<h3>Capabilities</h3>
+<pre id="capabilities"></pre>
+
+<h3>Settings</h3>
+<pre id="settings"></pre>
+
+<h3>Photo Metadata</h3>
+<pre id="photoMeta"></pre>
+
+<script>
+const startBtn = document.getElementById('start');
+const video = document.getElementById('video');
+const frameCanvas = document.getElementById('frameCanvas');
+const photoImg = document.getElementById('photo');
+
+startBtn.onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+
+    const track = stream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(track);
+
+    // Display capabilities
+    const capabilities = track.getCapabilities();
+    document.getElementById('capabilities').textContent =
+      JSON.stringify(capabilities, null, 2);
+
+    // Display settings
+    const settings = track.getSettings();
+    document.getElementById('settings').textContent =
+      JSON.stringify(settings, null, 2);
+
+    // --- grabFrame ---
+    const bitmap = await imageCapture.grabFrame();
+    frameCanvas.width = bitmap.width;
+    frameCanvas.height = bitmap.height;
+    const ctx = frameCanvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+
+    // --- takePhoto ---
+    const photoBlob = await imageCapture.takePhoto();
+    photoImg.src = URL.createObjectURL(photoBlob);
+
+    document.getElementById('photoMeta').textContent =
+      JSON.stringify({
+        type: photoBlob.type,
+        size: photoBlob.size,
+        frameWidth: bitmap.width,
+        frameHeight: bitmap.height
+      }, null, 2);
+
+  } catch (err) {
+    console.error(err);
+    alert("Camera access denied or unsupported browser.");
+  }
+};
+</script>
+
+</body>
+</html>
+
