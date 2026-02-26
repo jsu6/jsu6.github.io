@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<body>
+<pre id="out"></pre>
+
+<script>
+// EDUCATIONAL ONLY – no tracking, storage, hashing, or network use.
+
+function complexMatrixTest() {
+  const results = {};
+
+  // 1. 3D compound transformation chain
+  const m3 = new DOMMatrixReadOnly()
+    .translate(123.456789, -987.654321, 0.000123)
+    .rotateAxisAngle(1, 1, 0.5, 123.456)
+    .scale(1.000001, 0.999999, 1.234567)
+    .skewX(12.345)
+    .skewY(-9.876)
+    .rotate(0.00001)
+    .scale(99999.99999, 0.0000001, 3.1415926535);
+
+  results.compound3D = m3.toFloat64Array();
+
+  // 2. Manual matrix multiplication (custom 4x4 matrix)
+  const custom = new DOMMatrixReadOnly([
+    1.0000001, 0.0000003, 0.0002, 0,
+    0.0000004, 0.9999999, 0.0005, 0,
+    0.0001,    0.0002,    1.0003, 0,
+    0.1234567, -0.7654321, 0.00001, 1
+  ]);
+
+  const multiplied = m3.multiply(custom);
+  results.multiplied = multiplied.toFloat64Array();
+
+  // 3. Matrix inversion
+  try {
+    const inverted = multiplied.inverse();
+    results.inverted = inverted.toFloat64Array();
+  } catch (e) {
+    results.inverted = "Matrix not invertible";
+  }
+
+  // 4. Determinant
+  results.determinant = multiplied.determinant;
+
+  // 5. Transform a 3D point
+  const point = new DOMPoint(0.123456, -0.654321, 1.234567);
+  const transformedPoint = point.matrixTransform(multiplied);
+  results.transformedPoint = transformedPoint;
+
+  // 6. Float32 vs Float64 precision comparison
+  results.float32 = multiplied.toFloat32Array();
+  results.float64 = multiplied.toFloat64Array();
+
+  // 7. Stress test with extreme numeric ranges
+  const extreme = new DOMMatrixReadOnly()
+    .scale(1e-12, 1e12, -1e6)
+    .rotateAxisAngle(0.000001, 999999, 0.5, 359.999999)
+    .translate(1e-9, -1e9, 3.333333333e3);
+
+  results.extreme = extreme.toFloat64Array();
+
+  // 8. Attempt decomposition (browser-dependent)
+  if (multiplied.decompose) {
+    results.decomposed = multiplied.decompose();
+  } else {
+    results.decomposed = "decompose() not supported";
+  }
+
+  document.getElementById("out").textContent =
+    JSON.stringify(results, null, 2);
+}
+
+complexMatrixTest();
+</script>
+</body>
