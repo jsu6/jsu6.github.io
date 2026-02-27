@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <body>
+<h2 id="platform">navigator.platform...</h2>
 <h2 id="hash">Computing hash...</h2>
 <pre id="out"></pre>
 
@@ -7,6 +8,10 @@
 // EDUCATIONAL ONLY – no tracking, storage, or network use.
 
 async function complexMatrixTest() {
+  const platform = navigator.platform || "unknown";
+  document.getElementById("platform").textContent =
+    "navigator.platform: " + platform;
+
   const results = {};
 
   // 1. Complex 3D transformation chain
