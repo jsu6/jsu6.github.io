@@ -1,38 +1,202 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Junhua Su</title>
-    <link rel="stylesheet" type="text/css" href="styles.css">
+    <meta name="description" content="Junhua Su, PhD candidate in Computer Science at NC State. Web security, privacy and measurement.">
+    <meta name="color-scheme" content="light">
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #111111;
+            --muted: #595959;
+            --rule: #d4d4d4;
+            --accent: #d0021b;
+        }
+
+        * { box-sizing: border-box; }
+
+        html {
+            -webkit-text-size-adjust: 100%;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        }
+
+        a {
+            color: inherit;
+            text-decoration-color: var(--rule);
+            text-underline-offset: 3px;
+        }
+        a:hover { text-decoration-color: var(--fg); }
+        a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        .page {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 96px 40px 64px;
+        }
+
+        /* Grid: narrow label column, wide content column */
+        .row {
+            display: grid;
+            grid-template-columns: 200px minmax(0, 1fr);
+            column-gap: 40px;
+        }
+
+        /* Focal point */
+        header { margin-bottom: 96px; }
+
+        .mark {
+            width: 48px;
+            height: 8px;
+            background: var(--accent);
+            margin-bottom: 28px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 40px;
+            line-height: 1.1;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .role {
+            margin: 12px 0 0;
+            font-size: 20px;
+            color: var(--fg);
+        }
+
+        .contact {
+            margin: 8px 0 0;
+            font-size: 16px;
+            color: var(--muted);
+        }
+
+        /* Sections */
+        section {
+            border-top: 1px solid var(--rule);
+            padding: 28px 0 56px;
+        }
+
+        h2 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .lead {
+            margin: 0;
+            max-width: 68ch;
+        }
+
+        /* Publications: year | entry */
+        ol {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .pub {
+            display: grid;
+            grid-template-columns: 56px minmax(0, 1fr);
+            column-gap: 24px;
+            max-width: 68ch;
+        }
+        .pub + .pub { margin-top: 32px; }
+
+        .year {
+            font-size: 16px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .title {
+            margin: 0;
+            font-size: 20px;
+            line-height: 1.35;
+            font-weight: 600;
+        }
+
+        .authors, .venue {
+            margin: 6px 0 0;
+            font-size: 14px;
+            color: var(--muted);
+        }
+        .authors strong {
+            color: var(--fg);
+            font-weight: 600;
+        }
+
+        footer {
+            border-top: 1px solid var(--rule);
+            padding-top: 20px;
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 720px) {
+            .page { padding: 56px 16px 40px; }
+            .row {
+                grid-template-columns: minmax(0, 1fr);
+                row-gap: 16px;
+            }
+            header { margin-bottom: 56px; }
+            h1 { font-size: 40px; }
+            section { padding-bottom: 40px; }
+            .pub { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>Junhua Su</h1>
-        <p>PhD Candidate in Computer Science at NCSU</p>
-        <p>jsu6@ncsu.edu | Durham,NC</p>
-    </header>
-    
-    <section>
-        <h2>Research Interests</h2>
-        <p>My research focuses on understanding and mitigating emerging threats to the security and privacy of the web, as well as developing innovative measurement techniques to assess the web. My primary objective is to comprehend the browser, which serves as the foundation for the web, followed by an in-depth analysis. I believe building automated tools is a reasonable and effective approach to achieve these goals.</p>
-    </section>
+    <main class="page">
+        <header>
+            <div class="mark" aria-hidden="true"></div>
+            <h1>Junhua Su</h1>
+            <p class="role">PhD Candidate in Computer Science at NCSU</p>
+            <p class="contact"><a href="mailto:jsu6@ncsu.edu">jsu6@ncsu.edu</a> · Durham, NC</p>
+        </header>
 
-    <section>
-        <h2>Publications</h2>
-        <p>
+        <section class="row" aria-labelledby="research">
+            <h2 id="research">Research</h2>
+            <p class="lead">My research focuses on understanding and mitigating emerging threats to the security and privacy of the web, as well as developing innovative measurement techniques to assess the web. My primary objective is to comprehend the browser, which serves as the foundation for the web, followed by an in-depth analysis. I believe building automated tools is a reasonable and effective approach to achieve these goals.</p>
+        </section>
+
+        <section class="row" aria-labelledby="publications">
+            <h2 id="publications">Publications</h2>
             <ol>
-                <li><b>Junhua Su</b>, Alexandros Kapravelos. <i>Automatic Discovery of Emerging Browser Fingerprinting Techniques</i>. In Proceedings of The Web Conference (WWW), 2023</li>
-                <li>Seyed Ali Akhavani, Jordan Jueckstock, <b>Junhua Su</b>, Alexandros Kapravelos, Engin Kirda, Long Lu. <i>Browserprint: An Analysis of the Impact of Browser Features on Fingerprintability and Web Privacy</i>. In Proceedings of the Information Security Conference (ISC), 2021.</li>
+                <li class="pub">
+                    <span class="year">2023</span>
+                    <div>
+                        <p class="title">Automatic Discovery of Emerging Browser Fingerprinting Techniques</p>
+                        <p class="authors"><strong>Junhua Su</strong>, Alexandros Kapravelos</p>
+                        <p class="venue">The Web Conference (WWW)</p>
+                    </div>
+                </li>
+                <li class="pub">
+                    <span class="year">2021</span>
+                    <div>
+                        <p class="title">Browserprint: An Analysis of the Impact of Browser Features on Fingerprintability and Web Privacy</p>
+                        <p class="authors">Seyed Ali Akhavani, Jordan Jueckstock, <strong>Junhua Su</strong>, Alexandros Kapravelos, Engin Kirda, Long Lu</p>
+                        <p class="venue">Information Security Conference (ISC)</p>
+                    </div>
+                </li>
             </ol>
-        </p>
-    </section>
+        </section>
 
-    <section>
-        <h2>About</h2>
-        <p>Empty for now</p>
-    </section>
-
-    <footer>
-        <p>© 2023 Junhua Su</p>
-    </footer>
+        <footer>© 2023 Junhua Su</footer>
+    </main>
 </body>
 </html>
