@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>FPtest API readings</title>
+<meta name="color-scheme" content="light">
+<style>
+  :root { --bg: #ffffff; --fg: #111111; --muted: #595959; --rule: #d4d4d4; --accent: #d0021b; --soft: #f5f5f5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .page { max-width: 880px; margin: 0 auto; padding: 64px 24px; }
+  .mark { width: 48px; height: 8px; background: var(--accent); margin-bottom: 24px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 18px; margin: 40px 0 8px; }
+  p, li { color: var(--fg); max-width: 68ch; }
+  .muted { color: var(--muted); }
+  label { display: block; font-weight: 600; margin: 24px 0 4px; }
+  input[type=text] { width: 100%; max-width: 420px; font: inherit; padding: 6px 8px; border: 1px solid var(--rule); }
+  button { font: inherit; padding: 6px 14px; border: 1px solid var(--fg); background: var(--bg); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--fg); color: var(--bg); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  progress { width: 100%; max-width: 420px; height: 8px; display: block; margin: 16px 0 4px; }
+  #status { font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.6em; }
+  ul#gated { padding-left: 0; list-style: none; }
+  ul#gated li { margin: 8px 0; }
+  .area { border: 1px dashed var(--rule); background: var(--soft); padding: 24px; margin: 8px 0; max-width: 420px;
+          height: 120px; overflow: auto; color: var(--muted); }
+  .area.done { border-color: var(--fg); color: var(--fg); }
+  .scroller { height: 400px; }
+  .table-wrap { overflow-x: auto; margin-top: 16px; }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  td { border-top: 1px solid var(--rule); padding: 4px 8px 4px 0; vertical-align: top; }
+  td.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; color: var(--muted); }
+  #stage { margin-top: 48px; }  /* the probes' elements, laid out as in item 3.4's page */
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="mark"></div>
+  <h1>FPtest: web API readings</h1>
+  <p class="muted">A research page (NC State). It reads the values 100 web APIs
+    found by tracing Chromium's source, and 25 randomly chosen control APIs, return in your browser.</p>
+  <p>Nothing leaves this page by itself: there is no server, no cookie, no third-party script. The readings stay in
+    this tab until you press <strong>Download JSON</strong>, which saves them as a file on your device. Close the tab
+    to discard them.</p>
+
+  <label for="label">Device label (optional, chosen by you, e.g. "laptop-1 chrome")</label>
+  <input id="label" type="text" maxlength="60" autocomplete="off">
+
+  <h2>1. Read the APIs</h2>
+  <p class="muted">Takes about a minute. Some APIs return nothing on some browsers; that is recorded too.</p>
+  <button id="run" class="primary" type="button">Run</button>
+  <progress id="bar" value="0" max="1"></progress>
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <div id="after" hidden>
+    <h2>2. Optional: readings that need your permission or action</h2>
+    <p class="muted">Each button asks the browser for one permission or chooser; you can decline.</p>
+    <ul id="gated"></ul>
+    <p class="muted">Scroll inside this box with your mouse wheel or touchpad:</p>
+    <div id="wheel-area" class="area scroller" tabindex="0"><div style="height:1200px">Scroll here.</div></div>
+    <p class="muted">On a touch screen, touch this box:</p>
+    <div id="touch-area" class="area">Touch here.</div>
+
+    <h2>3. Save</h2>
+    <button id="download" class="primary" type="button" disabled>Download JSON</button>
+  </div>
+
+  <div class="table-wrap"><table><tbody id="table"></tbody></table></div>
+</div>
+<div id="stage" class="page" aria-hidden="true"></div>
+<script src="probes.js"></script>
+</body>
+</html>
