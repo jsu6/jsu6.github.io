@@ -22,6 +22,7 @@
   button { font: inherit; padding: 6px 14px; border: 1px solid var(--fg); background: var(--bg); color: var(--fg); cursor: pointer; }
   button.primary { background: var(--fg); color: var(--bg); }
   button:disabled { opacity: .4; cursor: default; }
+  textarea { display: block; width: 100%; margin-top: 8px; font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--fg); background: var(--bg); border: 1px solid var(--fg); padding: 6px; resize: vertical; }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   progress { width: 100%; max-width: 420px; height: 8px; display: block; margin: 16px 0 4px; }
   #status { font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.6em; }
@@ -32,7 +33,8 @@
   .area.done { border-color: var(--fg); color: var(--fg); }
   .scroller { height: 400px; }
   .table-wrap { overflow-x: auto; margin-top: 16px; }
-  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; table-layout: fixed; }
+  td:first-child { width: 4.5em; } td:nth-child(2) { width: 38%; overflow-wrap: anywhere; }
   td { border-top: 1px solid var(--rule); padding: 4px 8px 4px 0; vertical-align: top; }
   td.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; color: var(--muted); }
   #stage { margin-top: 48px; }  /* the probes' elements, laid out as in item 3.4's page */
@@ -45,8 +47,8 @@
   <p class="muted">A research page (NC State). It reads the values 100 web APIs
     found by tracing Chromium's source, and 25 randomly chosen control APIs, return in your browser.</p>
   <p>Nothing leaves this page by itself: there is no server, no cookie, no third-party script. The readings stay in
-    this tab until you press <strong>Download JSON</strong>, which saves them as a file on your device. Close the tab
-    to discard them.</p>
+    this tab. At the end they appear as text that you can copy and send to yourself (a note, a message or an email).
+    Close the tab to discard them.</p>
 
   <label for="label">Device label (optional, chosen by you, e.g. "laptop-1 chrome")</label>
   <input id="label" type="text" maxlength="60" autocomplete="off">
@@ -66,8 +68,13 @@
     <p class="muted">On a touch screen, touch this box:</p>
     <div id="touch-area" class="area">Touch here.</div>
 
-    <h2>3. Save</h2>
-    <button id="download" class="primary" type="button" disabled>Download JSON</button>
+    <h2>3. Copy your readings</h2>
+    <p class="muted">Press Copy, then paste the text somewhere you can reach from your computer (a note, a message
+      or an email to yourself). Copy again after the optional readings above; the text updates as they come in.</p>
+    <button id="copy" class="primary" type="button" disabled>Copy</button>
+    <span id="copied" class="muted" role="status" aria-live="polite"></span>
+    <textarea id="out" readonly rows="8" spellcheck="false" autocapitalize="off" autocomplete="off"
+      aria-label="Your readings as JSON text"></textarea>
   </div>
 
   <div class="table-wrap"><table><tbody id="table"></tbody></table></div>

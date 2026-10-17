@@ -597,7 +597,7 @@ const CANDIDATES = [{"api": "Navigator.presentation", "group": "top", "pos": 1, 
 
 // Cross-device PoC: the page's runner. analysis/web_poc.py builds probes.js from item 3.4's probes
 // (out/experiments/3.4/pages/probe.js, the object P and its helpers, unchanged but for the service-worker path)
-// followed by this file. Nothing is sent anywhere: the readings stay in the page until the visitor downloads them.
+// followed by this file. Nothing is sent anywhere: the readings stay in the page, shown as JSON text the visitor can copy.
 'use strict';
 
 const SCHEMA = 'fptest/1';
@@ -735,9 +735,9 @@ async function runAuto() {
   record.auto = results;
   record.finished = new Date().toISOString();
   const ok = Object.values(results).filter((r) => 'v' in r).length;
-  setStatus(`Done: ${ok} of ${order.length} APIs returned a value. Optional readings below, then download.`);
+  setStatus(`Done: ${ok} of ${order.length} APIs returned a value. Optional readings below, then copy.`);
   $('after').hidden = false;
-  $('download').disabled = false;
+  $('copy').disabled = false;
   renderTable();
 }
 
@@ -778,6 +778,7 @@ function armInput(key) {
 }
 
 function renderTable() {
+  renderText();
   const rows = [];
   const all = Object.assign({}, record.auto || {}, record.gated, record.input);
   for (const c of CANDIDATES) {
@@ -793,20 +794,29 @@ function escapeHTML(s) {
   return s.replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 }
 
-function download() {
-  const blob = new Blob([JSON.stringify(record, null, 1)], {type: 'application/json'});
-  const a = document.createElement('a');
-  const label = (record.device_label || 'device').replace(/[^\w.-]+/g, '_').slice(0, 40);
-  a.href = URL.createObjectURL(blob);
-  a.download = `fptest-${label}-${record.started.replace(/[:.]/g, '-')}-${record.visit_id.slice(0, 8)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+// The record as text, refreshed with the table: one JSON object per visit, which web_poc.py analyze reads back
+// from any .json or .txt file holding one or more of them.
+function renderText() {
+  $('out').value = JSON.stringify(record, null, 1);
+}
+
+async function copyText() {
+  const box = $('out');
+  try {
+    await navigator.clipboard.writeText(box.value);
+    $('copied').textContent = 'Copied.';
+  } catch (e) {
+    // No clipboard API (older iOS, insecure context): select the text so the system Copy menu takes it.
+    box.focus();
+    box.setSelectionRange(0, box.value.length);
+    $('copied').textContent = document.execCommand && document.execCommand('copy')
+      ? 'Copied.' : 'Text selected: use your device\'s Copy.';
+  }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
   $('run').addEventListener('click', runAuto);
-  $('download').addEventListener('click', download);
+  $('copy').addEventListener('click', copyText);
   for (const [key, g] of Object.entries(GATED)) {
     const b = document.createElement('button');
     b.type = 'button';
