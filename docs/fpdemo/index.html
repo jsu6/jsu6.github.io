@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>FPdemo: around Brave's hooks</title>
+<meta name="color-scheme" content="light">
+<style>
+  :root { --bg: #ffffff; --fg: #111111; --muted: #595959; --rule: #d4d4d4; --accent: #d0021b; --soft: #f5f5f5;
+          --hooked: #8a5a00; --hookedbg: #fbf0dc; --route: #1d4f8a; --routebg: #e4eef9;
+          --bypass: #ffffff; --bypassbg: #b3261e; --same: #1d6b3a; --samebg: #e6f3ea; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .page { max-width: 880px; margin: 0 auto; padding: 40px 20px 64px; }
+  .mark { width: 48px; height: 8px; background: var(--accent); margin-bottom: 20px; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 20px; margin: 0 0 4px; }
+  p { max-width: 70ch; margin: 8px 0; }
+  .muted { color: var(--muted); }
+  code { font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  button { font: inherit; padding: 8px 16px; border: 1px solid var(--fg); background: var(--fg); color: var(--bg);
+           cursor: pointer; margin: 8px 0; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .browser { position: sticky; top: 0; z-index: 2; background: var(--fg); color: var(--bg); padding: 10px 20px;
+             font: 600 18px/1.3 ui-monospace, Menlo, monospace; text-align: center; }
+  .browser small { display: block; font: 13px/1.4 -apple-system, sans-serif; opacity: .8; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 16px 0; font-size: 14px; }
+  .card { border: 1px solid var(--rule); padding: 20px; margin: 28px 0; }
+  .lane { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  @media (max-width: 640px) { .lane { grid-template-columns: 1fr; } }
+  .side { padding: 12px; }
+  .side.hooked { background: var(--hookedbg); border-left: 6px solid var(--hooked); }
+  .side.route { background: var(--routebg); border-left: 6px solid var(--route); }
+  .side h3 { margin: 0 0 4px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+  .side.hooked h3 { color: var(--hooked); } .side.route h3 { color: var(--route); }
+  .api { font: 13px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); }
+  .val { font: 600 22px/1.3 ui-monospace, Menlo, monospace; margin-top: 6px; overflow-wrap: anywhere;
+         display: flex; align-items: center; gap: 10px; min-height: 1.3em; }
+  .swatch { width: 28px; height: 28px; flex: none; border: 1px solid rgba(0,0,0,.2); }
+  .sub { font: 13px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
+  .verdict { margin-top: 12px; padding: 12px 14px; font-weight: 600; }
+  .verdict.bypass { background: var(--bypassbg); color: var(--bypass); }
+  .verdict.same { background: var(--samebg); color: var(--same); }
+  .verdict.wait { background: var(--soft); color: var(--muted); font-weight: 400; }
+  .verdict small { display: block; font-weight: 400; margin-top: 4px; }
+  details { margin-top: 12px; } summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  pre { background: var(--soft); padding: 12px; overflow-x: auto; font: 13px/1.5 ui-monospace, Menlo, monospace; margin: 8px 0; }
+  .canvases { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+  .canvases figure { margin: 0; } .canvases figcaption { font-size: 13px; color: var(--muted); }
+  canvas { border: 1px solid var(--rule); display: block; max-width: 100%; image-rendering: pixelated; }
+  table { border-collapse: collapse; font-size: 14px; width: 100%; margin-top: 12px; }
+  th { text-align: left; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px 4px 0; }
+  td { border-top: 1px solid var(--rule); padding: 6px 8px 6px 0; vertical-align: top; }
+  td.v { font: 600 14px ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  td.h { font-size: 13px; color: var(--muted); }
+  td.h a { display: inline-block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; word-break: break-all; }
+  td { overflow-wrap: anywhere; }
+  a { color: #1d4f8a; }
+  details.sources { border-top: 1px solid var(--rule); margin-top: 16px; padding-top: 8px; }
+  details.sources > summary { font-weight: 600; color: var(--fg); font-size: 15px; }
+  .src { margin: 16px 0; }
+  .src-h { font: 13px/1.4 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .who { display: inline-block; padding: 2px 6px; font-weight: 600; margin-right: 4px; }
+  .who.brave { background: var(--hookedbg); color: var(--hooked); }
+  .who.chromium { background: var(--routebg); color: var(--route); }
+  .src-why { font-size: 14px; margin: 6px 0 0; }
+  .src pre { margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="browser" id="browser">Detecting browser…</div>
+<div class="page">
+  <div class="mark"></div>
+  <h1>FPdemo: reading what Brave's fingerprinting hooks hide</h1>
+  <p>Open this page in <b>Brave</b> and in <b>Chromium</b> of the same version, side by side. Brave changes the value
+    of an API it hooks. For each piece of information, this page reads it twice: once through the API Brave hooks,
+    and once through a route that avoids the hook.</p>
+  <div class="legend">
+    <span><b style="color:var(--hooked)">■ Hooked API</b>: Brave changes this value.</span>
+    <span><b style="color:var(--route)">■ Route around the hook</b>: reads the same information another way.</span>
+  </div>
+  <p><b>How to read it.</b> In Chromium the two sides agree (green). In Brave they disagree (red): the hook changed
+    one side and missed the other. The route's value is the same in both windows, so it is the real one.
+    Colour swatches make long values easy to compare between the windows.</p>
+  <p class="muted">Nothing leaves this page: no server, no cookie, no storage, no third-party script. Hooks are as in
+    brave-core v1.92.144; file names refer to Brave's <code>chromium_src/third_party/blink/renderer/</code>.</p>
+
+  <section class="card" id="screen-card">
+    <h2>1. Screen size</h2>
+    <p><b>Brave's hook:</b> <code>Screen.width/height</code> come from a copy of the screen information in which Brave
+      puts a common desktop size (<code>core/page/chrome_client_impl.cc</code>). <b>The route:</b> in fullscreen the
+      viewport <i>is</i> the screen, and <code>visualViewport</code> is not hooked. It needs one click.</p>
+    <button id="run-screen" type="button">Click to measure (enters fullscreen for a moment)</button>
+    <div class="lane">
+      <div class="side hooked"><h3>Hooked API</h3><div class="api">screen.width × screen.height</div>
+        <div class="val" id="screen-hooked">…</div>
+        <div class="sub" id="screen-hooked-sub"></div></div>
+      <div class="side route"><h3>Route around the hook</h3><div class="api">visualViewport in fullscreen</div>
+        <div class="val" id="screen-route">click above</div>
+        <div class="sub" id="screen-route-sub"></div></div>
+    </div>
+    <div class="verdict wait" id="screen-verdict">Click the button to compare.</div>
+    <details><summary>The code</summary><pre>// hooked
+screen.width, screen.height
+// route: one click, then
+await document.documentElement.requestFullscreen();
+visualViewport.width, visualViewport.height       // CSS px; × devicePixelRatio for device px</pre></details>
+    <details class="sources"><summary>Source code for review: the hook in Brave, and the reader it misses</summary><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/core/frame/screen.cc#L8-L10">chromium_src/third_party/blink/renderer/core/frame/screen.cc, lines 8–10</a></div><p class="src-why">Brave renames the call the <code>Screen</code> object makes, so <code>screen.*</code> reads Brave's version below.</p><pre>#define GetScreenInfos BraveGetScreenInfos
+#include &lt;third_party/blink/renderer/core/frame/screen.cc&gt;
+#undef GetScreenInfos</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/core/page/chrome_client_impl.cc#L35-L61">chromium_src/third_party/blink/renderer/core/page/chrome_client_impl.cc, lines 35–61</a></div><p class="src-why">Brave's version copies the real screen information and replaces only the size (<code>rect</code>, <code>available_rect</code>) and two flags. Every other field, such as <code>device_scale_factor</code> and <code>orientation_type</code>, is passed through.</p><pre>const display::ScreenInfos&amp; ChromeClientImpl::BraveGetScreenInfos(
+    LocalFrame&amp; frame) const {
+  LocalDOMWindow* dom_window = frame.DomWindow();
+  if (!dom_window) {
+    return GetScreenInfos(frame);
+  }
+  ExecutionContext* context = dom_window-&gt;GetExecutionContext();
+  if (!brave::BlockScreenFingerprinting(context)) {
+    return GetScreenInfos(frame);
+  }
+  display::ScreenInfo screen_info = GetScreenInfo(frame);
+  screen_info.rect = gfx::Rect(allowed_desktop_screen_sizes.back().width(),
+                               allowed_desktop_screen_sizes.back().height());
+  const int outerWidth = dom_window-&gt;outerWidth();
+  const int outerHeight = dom_window-&gt;outerHeight();
+  for (const auto&amp; size : allowed_desktop_screen_sizes) {
+    if (size.width() &gt;= outerWidth &amp;&amp; size.height() &gt;= outerHeight) {
+      screen_info.rect = gfx::Rect(size.width(), size.height());
+      break;
+    }
+  }
+  screen_info.available_rect = screen_info.rect;
+  screen_info.is_extended = false;
+  screen_info.is_primary = false;
+  screen_infos_ = display::ScreenInfos(screen_info);
+  return screen_infos_;
+}</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/core/frame/local_dom_window.cc#L60-L69">chromium_src/third_party/blink/renderer/core/frame/local_dom_window.cc, lines 60–69</a></div><p class="src-why"><code>outerWidth</code> becomes <code>innerWidth</code> plus 0–8 px. <code>innerWidth</code> itself is not hooked.</p><pre>int LocalDOMWindow::outerWidth() const {
+  // Prevent fingerprinter use of outerWidth by returning a farbled value near
+  // innerWidth instead:
+  ExecutionContext* context = GetExecutionContext();
+  auto* top_window = DynamicTo&lt;LocalDOMWindow&gt;(top());
+  return BlockScreenFingerprinting(context) &amp;&amp; top_window
+             ? FarbleInteger(context, brave::FarbleKey::kWindowInnerWidth,
+                             top_window-&gt;innerWidth(), 0, 8)
+             : outerWidth_ChromiumImpl();
+}</pre></div><div class="src"><div class="src-h"><span class="who chromium">Chromium 150.0.7871.186</span> <a href="https://source.chromium.org/chromium/chromium/src/+/refs/tags/150.0.7871.186:third_party/blink/renderer/core/frame/dom_visual_viewport.cc;l=139-159">third_party/blink/renderer/core/frame/dom_visual_viewport.cc, lines 139–159</a></div><p class="src-why"><code>visualViewport.width</code> reads the page's visual viewport, not the screen information. Brave has no override of this file (its <code>chromium_src/…/core/frame/</code> has no <code>dom_visual_viewport.cc</code>), so in fullscreen it returns the real screen width.</p><pre>double DOMVisualViewport::width() const {
+  LocalFrame* frame = window_-&gt;GetFrame();
+  if (!frame)
+    return 0;
+
+  if (!frame-&gt;IsOutermostMainFrame()) {
+    // Update layout to ensure scrollbars are up-to-date.
+    frame-&gt;GetDocument()-&gt;UpdateStyleAndLayout(
+        DocumentUpdateReason::kJavaScript);
+    auto* scrollable_area = frame-&gt;View()-&gt;LayoutViewport();
+    float width =
+        scrollable_area-&gt;VisibleContentRect(kExcludeScrollbars).width();
+    return AdjustForAbsoluteZoom::AdjustInt(ClampTo&lt;int&gt;(ceilf(width)),
+                                            frame-&gt;LayoutZoomFactor());
+  }
+
+  if (Page* page = frame-&gt;GetPage())
+    return page-&gt;GetVisualViewport().Width();
+
+  return 0;
+}</pre></div><div class="src"><div class="src-h"><span class="who chromium">Chromium 150.0.7871.186</span> <a href="https://source.chromium.org/chromium/chromium/src/+/refs/tags/150.0.7871.186:third_party/blink/renderer/core/frame/local_dom_window.cc;l=1822-1827">third_party/blink/renderer/core/frame/local_dom_window.cc, lines 1822–1827</a></div><p class="src-why"><code>devicePixelRatio</code> reads the frame's scale factor directly, not through <code>Screen</code>. Brave does not hook it.</p><pre>double LocalDOMWindow::devicePixelRatio() const {
+  if (!GetFrame())
+    return 0.0;
+
+  return GetFrame()-&gt;DevicePixelRatio();
+}</pre></div></details>
+  </section>
+
+  <section class="card" id="canvas-card">
+    <h2>2. Canvas rendering</h2>
+    <p><b>Brave's hook:</b> noise is added to pixels on their way out of a 2D canvas, in <code>getImageData</code>,
+      <code>toDataURL</code> and <code>toBlob</code> (<code>modules/canvas/canvas2d/base_rendering_context_2d.cc</code>,
+      <code>core/html/canvas/html_canvas_element.cc</code>). The canvas itself holds the real pixels.
+      <b>The route:</b> copy the canvas into WebGL and read it with <code>readPixels</code>, which Brave blocks only at
+      its Strict level (<code>modules/webgl/webgl_rendering_context_base.cc</code>).</p>
+    <div class="lane">
+      <div class="side hooked"><h3>Hooked API</h3><div class="api">getImageData → SHA-256</div>
+        <div class="val" id="canvas-hooked">…</div><div class="sub" id="canvas-hooked-sub"></div></div>
+      <div class="side route"><h3>Route around the hook</h3><div class="api">createImageBitmap → texImage2D → readPixels → SHA-256</div>
+        <div class="val" id="canvas-route">…</div><div class="sub" id="canvas-route-sub"></div></div>
+    </div>
+    <div class="verdict wait" id="canvas-verdict">Reading…</div>
+    <div class="canvases">
+      <figure><canvas id="canvas-shown" width="300" height="120"></canvas><figcaption>The drawing</figcaption></figure>
+      <figure><canvas id="canvas-diff" width="300" height="120"></canvas>
+        <figcaption>Red: the pixels Brave's noise changed (where the two reads differ)</figcaption></figure>
+    </div>
+    <details><summary>The code</summary><pre>// hooked
+ctx.getImageData(0, 0, w, h)
+// route
+const bitmap = await createImageBitmap(canvas);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);</pre></details>
+    <details class="sources"><summary>Source code for review: the hook in Brave, and the reader it misses</summary><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc#L16-L21">chromium_src/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc, lines 16–21</a></div><p class="src-why"><code>getImageData</code>: noise on the <code>ImageData</code> handed to the page.</p><pre>#define BRAVE_GET_IMAGE_DATA                                              \
+  if (ExecutionContext* context = ExecutionContext::From(script_state)) { \
+    SkPixmap image_data_pixmap = image_data-&gt;GetSkPixmap();               \
+    brave::BraveSessionCache::From(*context).PerturbPixels(               \
+        gfx::SkPixmapToWritableSpan(image_data_pixmap));                  \
+  }</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc#L11-L22">chromium_src/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc, lines 11–22</a></div><p class="src-why"><code>toDataURL</code>: noise on the pixels before they are encoded.</p><pre>#define BRAVE_TO_DATA_URL_INTERNAL                                          \
+  {                                                                         \
+    ExecutionContext* execution_context = GetExecutionContext();            \
+    if (!execution_context) {                                               \
+      execution_context = scoped_execution_context_.Get();                  \
+    }                                                                       \
+    if (execution_context) {                                                \
+      brave::BraveSessionCache::From(*execution_context)                    \
+          .PerturbPixels(                                                   \
+              gfx::SkPixmapToWritableSpan(data_buffer-&gt;pixmap_multable())); \
+    }                                                                       \
+  }</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc#L10-L12">chromium_src/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc, lines 10–12</a></div><p class="src-why"><code>toBlob</code> and <code>OffscreenCanvas.convertToBlob</code>: the same.</p><pre>#define BRAVE_CANVAS_ASYNC_BLOB_CREATOR                    \
+  brave::BraveSessionCache::From(*context_).PerturbPixels( \
+      gfx::SkPixmapToWritableSpan(src_data_));</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/patches/third_party-blink-renderer-modules-webgl-webgl_rendering_context_base.cc.patch#L165-L171">patches/third_party-blink-renderer-modules-webgl-webgl_rendering_context_base.cc.patch, lines 165–171</a></div><p class="src-why">WebGL <code>readPixels</code> gets one line: return early unless fingerprinting is allowed. It is Brave's only change to WebGL readback; nothing in its WebGL patch or overrides adds noise to it.</p><pre>@@ -5276,6 +5296,7 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+                                                  int64_t offset) {
+   if (isContextLost())
+     return;
++  BRAVE_WEBGL_RENDERING_CONTEXT_BASE_RETURN
+   // Due to WebGL&#x27;s same-origin restrictions, it is not possible to
+   // taint the origin using the WebGL API.</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc#L28-L34">chromium_src/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc, lines 28–34</a></div><p class="src-why">The line asks <code>brave::AllowFingerprinting</code> for the WebGL setting…</p><pre>bool AllowFingerprintingForHost(blink::CanvasRenderingContextHost* host) {
+  if (!host) {
+    return true;
+  }
+  return brave::AllowFingerprinting(host-&gt;GetTopExecutionContext(),
+                                    ContentSettingsType::BRAVE_WEBCOMPAT_WEBGL);
+}</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/third_party/blink/renderer/core/farbling/brave_session_cache.cc#L161-L166">third_party/blink/renderer/core/farbling/brave_session_cache.cc, lines 161–166</a></div><p class="src-why">…which is false only at <code>MAXIMUM</code> (Strict). At the default level (<code>BALANCED</code>), <code>readPixels</code> returns the pixels unchanged.</p><pre>bool AllowFingerprinting(ExecutionContext* context,
+                         ContentSettingsType webcompat_settings_type) {
+  return (GetBraveFarblingLevelFor(context, webcompat_settings_type,
+                                   BraveFarblingLevel::OFF) !=
+          BraveFarblingLevel::MAXIMUM);
+}</pre></div><div class="src"><div class="src-h"><span class="who chromium">Chromium 150.0.7871.186</span> <a href="https://source.chromium.org/chromium/chromium/src/+/refs/tags/150.0.7871.186:third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc;l=5269-5281">third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc, lines 5269–5281</a></div><p class="src-why">Chromium's <code>readPixels</code> entry point. Brave's line goes after <code>isContextLost()</code>.</p><pre>void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+                                                 GLint y,
+                                                 GLsizei width,
+                                                 GLsizei height,
+                                                 GLenum format,
+                                                 GLenum type,
+                                                 DOMArrayBufferView* pixels,
+                                                 int64_t offset) {
+  if (isContextLost())
+    return;
+  // Due to WebGL&#x27;s same-origin restrictions, it is not possible to
+  // taint the origin using the WebGL API.
+  DCHECK(Host()-&gt;OriginClean());</pre></div></details>
+  </section>
+
+  <section class="card" id="audio-card">
+    <h2>3. Audio rendering <span class="muted" style="font-weight:400;font-size:15px">(not yet measured in our study)</span></h2>
+    <p><b>Brave's hook:</b> the samples a page reads out of Web Audio are scaled, in
+      <code>AudioBuffer.getChannelData</code> and <code>copyFromChannel</code> (<code>modules/webaudio/audio_buffer.cc</code>).
+      <b>The candidate route:</b> an <code>AudioWorklet</code> sees the same samples while they are rendered and posts
+      them to the page.</p>
+    <div class="lane">
+      <div class="side hooked"><h3>Hooked API</h3><div class="api">getChannelData → SHA-256</div>
+        <div class="val" id="audio-hooked">…</div><div class="sub" id="audio-hooked-sub"></div></div>
+      <div class="side route"><h3>Route around the hook</h3><div class="api">AudioWorklet input → SHA-256</div>
+        <div class="val" id="audio-route">…</div><div class="sub" id="audio-route-sub"></div></div>
+    </div>
+    <div class="verdict wait" id="audio-verdict">Reading…</div>
+    <details><summary>The code</summary><pre>// hooked
+renderedBuffer.getChannelData(0)
+// route: a worklet between the compressor and the destination
+process(inputs, outputs) {
+  outputs[0][0].set(inputs[0][0]);
+  this.port.postMessage(inputs[0][0].slice());   // the samples, before any hook
+  return true;
+}</pre></details>
+    <details class="sources"><summary>Source code for review: the hook in Brave, and the reader it misses</summary><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/modules/webaudio/audio_buffer.cc#L16-L31">chromium_src/third_party/blink/renderer/modules/webaudio/audio_buffer.cc, lines 16–31</a></div><p class="src-why"><code>getChannelData</code> and <code>copyFromChannel</code>: the samples handed to the page are scaled.</p><pre>#define BRAVE_AUDIOBUFFER_GETCHANNELDATA                                      \
+  {                                                                           \
+    NotShared&lt;DOMFloat32Array&gt; destination = getChannelData(channel_index);   \
+    base::span&lt;float&gt; dst = destination-&gt;AsSpan();                            \
+    if (!dst.empty()) {                                                       \
+      if (ExecutionContext* context = ExecutionContext::From(script_state)) { \
+        brave::BraveSessionCache::From(*context).FarbleAudioChannel(dst);     \
+      }                                                                       \
+    }                                                                         \
+  }
+
+#define BRAVE_AUDIOBUFFER_COPYFROMCHANNEL                                 \
+  if (ExecutionContext* context = ExecutionContext::From(script_state)) { \
+    brave::BraveSessionCache::From(*context).FarbleAudioChannel(          \
+        dst.first(count));                                                \
+  }</pre></div><div class="src"><div class="src-h"><span class="who brave">Brave v1.92.144</span> <a href="https://github.com/brave/brave-core/tree/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/chromium_src/third_party/blink/renderer/modules/webaudio">chromium_src/third_party/blink/renderer/modules/webaudio/</a></div><p class="src-why">Brave's only Web Audio overrides are <code>analyser_handler.cc</code>, <code>audio_buffer.cc</code> and <code>realtime_analyser.cc/.h</code>, with their patches. There is none for the AudioWorklet.</p></div><div class="src"><div class="src-h"><span class="who chromium">Chromium 150.0.7871.186</span> <a href="https://source.chromium.org/chromium/chromium/src/+/refs/tags/150.0.7871.186:third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc;l=469-477">third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc, lines 469–477</a></div><p class="src-why">Chromium runs the page's <code>process()</code> on each rendered block from here. Brave adds no hook on this path.</p><pre>bool AudioWorkletProcessor::Process(
+    const Vector&lt;scoped_refptr&lt;AudioBus&gt;&gt;&amp; inputs,
+    Vector&lt;scoped_refptr&lt;AudioBus&gt;&gt;&amp; outputs,
+    const HashMap&lt;String, std::unique_ptr&lt;AudioFloatArray&gt;&gt;&amp; param_value_map) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT(&quot;audio-worklet&quot;),
+               &quot;AudioWorkletProcessor::Process&quot;);
+
+  CHECK(global_scope_-&gt;IsContextThread());
+  DCHECK(!hasErrorOccurred());</pre></div></details>
+  </section>
+
+  <section class="card" id="other-card">
+    <h2>4. The other APIs Brave hooks</h2>
+    <p>No route around these is shown. Compare the values between the two windows: where Brave's differs from
+      Chromium's, the hook is active.</p>
+    <table><thead><tr><th>API</th><th>Value here</th><th>What Brave's hook does (default level), and its source</th></tr></thead>
+      <tbody id="other-table"></tbody></table>
+  </section>
+</div>
+<script src="demo.js"></script>
+</body>
+</html>
