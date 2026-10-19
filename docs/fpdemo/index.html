@@ -71,6 +71,11 @@
   .src-h .who.chromium { background: var(--routebg); color: var(--route); }
   .src-why { font-size: 14px; margin: 6px 0 0; }
   td.diff { background: var(--nobg); }
+  .code-index { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 13px ui-monospace, Menlo, monospace; margin: 8px 0; }
+  pre.code { font-size: 12px; max-height: 70vh; overflow: auto; }
+  pre.code > div:target { background: var(--hookedbg); }
+  pre.code .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; text-align: right; color: var(--muted);
+                 user-select: none; }
 </style>
 </head>
 <body>
@@ -379,6 +384,18 @@ process(inputs, outputs) {
       return GetIntParameter(script_state, pname);</pre></div></details>
   </details>
 
+  <h2>Is it a coincidence?</h2>
+  <p>Two checks rule it out.</p>
+  <ul>
+    <li><b>The hashes.</b> Canvas and audio rows compare SHA-256 hashes of every pixel byte (144,000) or sample
+      (5,000). The page shows 16 hex digits (64 bits). Brave's noise would have to leave every byte unchanged for a
+      route to match by chance.</li>
+    <li><b>New noise, same route.</b> Brave seeds its noise per site and per browser session. Quit Brave completely,
+      reopen it, run again, and paste the <i>first</i> Brave run's results into the <i>second</i> Brave run. Every
+      hooked API should change and every route should stay identical, which shows that the route does not carry
+      Brave's noise.</li>
+  </ul>
+
   <h2>The other APIs Brave hooks</h2>
   <p>For these, this page shows no route around the hook. A value that differs between the windows (highlighted)
     shows that Brave's hook is active.</p>
@@ -386,7 +403,15 @@ process(inputs, outputs) {
     <thead><tr><th>API</th><th>This window</th><th>Other window</th><th>What Brave's hook does, and its source</th></tr></thead>
     <tbody id="other-table"></tbody>
   </table></div>
+
+  <h2>The exact code this page runs</h2>
+  <p>This is <code>demo.js</code> as this page loaded it: the page fetches the file from the same URL as its own
+    script tag and shows it here with line numbers. Your browser's developer tools (Sources) show the same file. The
+    AudioWorklet's code is the <code>WORKLET</code> string in it.</p>
+  <p class="muted" id="code-hash"></p>
+  <div id="code-index" class="code-index"></div>
+  <details id="code-view"><summary>demo.js</summary><pre id="code" class="code"></pre></details>
 </div>
-<script src="demo.js?v=4"></script>
+<script src="demo.js?v=6"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@
 // missed it). Nothing is sent or stored; results cross windows only by copy and paste.
 'use strict';
 
+const SCRIPT_URL = document.currentScript.src;  // this file, shown under "The exact code this page runs"
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BRAVE_SRC = 'https://github.com/brave/brave-core/blob/aeb45b6bbb1c16e67ba195ef74d7222a30dce160/' +
@@ -63,7 +64,8 @@ async function cell(who, value) {
   return div;
 }
 
-// [class, headline, explanation] for one row.
+// [class, headline, explanation] for one row. The real value is Chromium's hooked API: with no
+// hooks there, it returns what the browser actually has.
 function judge(row) {
   const me = ME.rows[row.key];
   const them = THEM && THEM.rows[row.key];
@@ -76,14 +78,33 @@ function judge(row) {
     }
     return ['wait', 'Now compare in Brave', same(row, me.hooked, me.route)
       ? 'Check 1 ✔: here in Chromium the route returns the same value as the hooked API.'
-      : 'Check 1 ✘: even here the route differs from the hooked API (see the diagnostics below).'];
+      : 'Check 1 ✘: even here the route differs from the hooked API (see the diagnostics under "How it works").'];
   }
-  if (ME.brave === THEM.brave) return ['wait', 'Both windows are ' + nameOf(ME), 'Open one in Brave and one in Chromium.'];
+  if (ME.brave && THEM.brave) {
+    // Two Brave runs, in different sessions or on different sites: Brave reseeds its noise, the
+    // real value stays. A route that stays put while the hooked API moves is not carrying noise.
+    const routeSame = same(row, me.route, them.route), hookedMoved = !same(row, me.hooked, them.hooked);
+    const why = `${routeSame ? '✔' : '✘'} the route is identical in both Brave runs\n` +
+      `${hookedMoved ? '✔' : '–'} the hooked API changed between them (Brave reseeded its noise)`;
+    if (routeSame && hookedMoved) return ['yes', 'Route not affected by the noise', why];
+    if (!routeSame) return ['no', 'The route changed', why];
+    if (row.size) {
+      return ['yes', 'Route stable', why + '\nBrave picks its stand-in screen size from the window size, not from a ' +
+        'random seed, so the hooked value need not change between sessions.'];
+    }
+    return ['wait', 'Same noise seed', why + '\nQuit and reopen Brave (a new session) and run again.'];
+  }
+  if (!ME.brave && !THEM.brave) return ['wait', 'Both windows are Chromium', 'Paste results from a Brave window.'];
   const B = ME.brave ? me : them, C = ME.brave ? them : me;
-  const c1 = same(row, C.hooked, C.route), c2 = !same(row, B.hooked, C.hooked), c3 = same(row, B.route, C.route);
-  const why = `${c1 ? '✔' : '✘'} 1. the route reads the real value in Chromium\n` +
-    `${c2 ? '✔' : '✘'} 2. Brave changes the hooked API\n${c3 ? '✔' : '✘'} 3. Brave's route equals Chromium's`;
+  const c1 = same(row, C.hooked, C.route), c2 = !same(row, B.hooked, C.hooked), c3 = same(row, B.route, C.hooked);
+  const why = `${c1 ? '✔' : '✘'} 1. in Chromium, the route equals the hooked API\n` +
+    `${c2 ? '✔' : '✘'} 2. in Brave, the hooked API differs from the real value\n` +
+    `${c3 ? '✔' : '✘'} 3. in Brave, the route equals the real value`;
   if (c1 && c2 && c3) return ['yes', 'Yes: bypassed', why];
+  if (!c1 && c2 && c3) {
+    return ['no', 'Check 1 failed in Chromium', why + '\nBrave\'s route found the real value, but the same route ' +
+      'measured something else in the Chromium window' + (row.size ? ': see the screen diagnostics.' : '.')];
+  }
   if (!c2) return ['no', 'No: the hook did not change it', why];
   return ['no', 'No', why];
 }
@@ -144,7 +165,7 @@ async function measureScreen() {
       sleep(5000).then(() => { throw new Error('the browser did not enter fullscreen'); })]);
     await untilScreenSettles(before);
     const vw = visualViewport.width, vh = visualViewport.height, vs = visualViewport.scale;
-    const iw = innerWidth, ih = innerHeight, fs = !!document.fullscreenElement;
+    const iw = innerWidth, ih = innerHeight, ow = outerWidth, oh = outerHeight, fs = !!document.fullscreenElement;
     await document.exitFullscreen();
     root.style.overflow = overflow;
     await sleep(300);
@@ -155,7 +176,17 @@ async function measureScreen() {
       `innerWidth × innerHeight ${iw} × ${ih}\n` +
       `screen.width × height ${screen.width} × ${screen.height}, availWidth × availHeight ${screen.availWidth} × ${screen.availHeight}\n` +
       `devicePixelRatio ${devicePixelRatio}: the screen in device px is ${Math.round(vw * vs * devicePixelRatio)} × ${Math.round(vh * vs * devicePixelRatio)}\n` +
+      `In fullscreen, outerWidth × outerHeight ${ow} × ${oh}: ${ow - iw} × ${oh - ih} px of the window is not page.\n` +
       'If the fullscreen size is not the screen size in Chromium, check that page zoom is 100% (Ctrl+0).';
+    // In fullscreen the whole window should be page. Brave reports outerHeight as innerHeight + 0–8 px,
+    // so only a larger gap is a sign of browser UI (an infobar) taking part of the screen.
+    if (oh - ih > 8 || ow - iw > 8) {
+      const warn = `Warning: in fullscreen, ${oh - ih} px of the window height (${ow - iw} px of the width) was not ` +
+        'page. A bar under the address bar (an infobar) is probably open in this window. Close it with its × and ' +
+        'press Run again.';
+      $('screen-diag').textContent += '\n' + warn;
+      $('run-status').dataset.warn = warn;
+    }
   } catch (e) {
     root.style.overflow = overflow;
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
@@ -473,7 +504,8 @@ $('run-all').addEventListener('click', async () => {
   await measureScreen();             // first, while the click still allows fullscreen
   $('run-status').textContent = 'Reading the rest…';
   await measureQuiet();
-  $('run-status').textContent = 'Done.';
+  $('run-status').textContent = $('run-status').dataset.warn || 'Done.';
+  delete $('run-status').dataset.warn;
 });
 
 $('run-details').addEventListener('click', async () => {
@@ -505,10 +537,48 @@ $('compare').addEventListener('click', async () => {
   }
 });
 
+// ------------------------------------------------------------------ the exact code this page runs
+
+async function showCode() {
+  try {
+    const text = await (await fetch(SCRIPT_URL)).text();
+    const lines = text.split('\n');
+    const pre = $('code');
+    pre.replaceChildren(...lines.map((line, i) => {
+      const div = document.createElement('div');
+      div.id = `L${i + 1}`;
+      div.innerHTML = '<span class="ln"></span><span></span>';
+      div.firstChild.textContent = String(i + 1);
+      div.lastChild.textContent = line || ' ';
+      return div;
+    }));
+    const index = [];
+    lines.forEach((line, i) => {
+      const m = line.match(/^(?:async )?function (\w+)|^const (WORKLET|OTHER|ROWS) =/);
+      if (m) index.push([m[1] || m[2], i + 1]);
+    });
+    $('code-index').replaceChildren(...index.map(([name, n]) => {
+      const a = document.createElement('a');
+      a.href = `#L${n}`;
+      a.textContent = `${name} (line ${n})`;
+      return a;
+    }));
+    $('code-hash').textContent = `${SCRIPT_URL.replace(location.origin, '')}: ${lines.length} lines, ` +
+      `SHA-256 ${await textHash(text)}`;
+  } catch (e) {
+    $('code-hash').textContent = `Could not load the script text: ${e.message}`;
+  }
+}
+
+$('code-index').addEventListener('click', (e) => {
+  if (e.target.closest('a')) $('code-view').open = true;
+});
+
 $('board').addEventListener('click', (e) => {
   const a = e.target.closest('a[href^="#"]');
   if (a) { const d = document.querySelector(a.getAttribute('href')); if (d) d.open = true; }
 });
 
 drawCanvas($('canvas-shown'));
+showCode();
 describeBrowser().then(() => { renderBoard(); return measureQuiet(); });
