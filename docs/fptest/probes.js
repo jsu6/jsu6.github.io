@@ -665,11 +665,108 @@ const GATED = {
   },
 };
 
+// Known-API baselines (added 2026-10-18): for a candidate whose value could come from an API prior work already uses on
+// the same source, the nearest such API (known_apis.tsv, [HighEntropy] or the GT), read the same way. web_poc.py analyze
+// asks whether the candidate tells apart two devices that the known API does not, i.e. whether it adds information.
+async function oscillatorRender() {
+  const off = new OfflineAudioContext(1, 4410, 44100);
+  const osc = off.createOscillator();
+  osc.frequency.value = 441;
+  osc.connect(off.destination);
+  osc.start();
+  return sha256(bytesOf((await off.startRendering()).getChannelData(0)));
+}
+
+async function gradientCanvas() {
+  const [src, sctx] = canvas2d(64, 64);
+  const g = sctx.createLinearGradient(0, 0, 64, 64);
+  g.addColorStop(0, '#f00'); g.addColorStop(0.5, '#0f8'); g.addColorStop(1, '#00f');
+  sctx.fillStyle = g; sctx.fillRect(0, 0, 64, 64);
+  sctx.fillStyle = '#000'; sctx.fillRect(20, 20, 3, 30);
+  const [o, octx] = canvas2d(37, 23);
+  octx.imageSmoothingQuality = 'high';
+  octx.drawImage(src, 0, 0, 37, 23);
+  return {source: await pixelHash(src), scaled: await pixelHash(o)};
+}
+
+function textSpan(css) {
+  const s = document.createElement(css.includes('width') ? 'div' : 'span');
+  s.style.cssText = 'font:16px sans-serif;' + css;
+  s.textContent = 'The quick brown fox jumps over the lazy dog 0123456789';
+  document.getElementById('stage').appendChild(s);
+  return s;
+}
+
+const BASELINE = {
+  'PeriodicWave.constructor': {known: 'BaseAudioContext.createOscillator', run: oscillatorRender},
+  'BaseAudioContext.createPeriodicWave': {known: 'BaseAudioContext.createOscillator', run: oscillatorRender},
+  'Window.createImageBitmap': {known: 'CanvasRenderingContext2D.getImageData', run: gradientCanvas},
+  'CanvasRenderingContext2D.drawFocusIfNeeded': {known: 'CanvasRenderingContext2D.getImageData', run: async () => {
+    const [c, ctx] = canvas2d();
+    ctx.beginPath(); ctx.rect(10, 10, 60, 20); ctx.stroke();
+    return pixelHash(c);
+  }},
+  'TextMetrics.emHeightDescent': {known: 'CanvasRenderingContext2D.measureText', run: async () => {
+    const [, ctx] = canvas2d();
+    ctx.font = '16px sans-serif';
+    const m = ctx.measureText('Hg');
+    return {width: m.width, actualBoundingBoxAscent: m.actualBoundingBoxAscent,
+      actualBoundingBoxDescent: m.actualBoundingBoxDescent, fontBoundingBoxAscent: m.fontBoundingBoxAscent,
+      fontBoundingBoxDescent: m.fontBoundingBoxDescent};
+  }},
+  'Element.scrollWidth': {known: 'HTMLElement.offsetWidth', run: async () => textSpan('white-space:nowrap').offsetWidth},
+  'Element.scrollLeft': {known: 'HTMLElement.offsetWidth', run: async () => textSpan('white-space:nowrap').offsetWidth},
+  'Element.scrollHeight': {known: 'HTMLElement.offsetHeight', run: async () => textSpan('width:120px').offsetHeight},
+  'OpaqueRange.getBoundingClientRect': {known: 'Element.getBoundingClientRect', run: async () => {
+    const s = document.createElement('span');
+    s.style.font = '16px sans-serif';
+    s.textContent = 'Hello';
+    document.getElementById('stage').appendChild(s);
+    const r = s.getBoundingClientRect();
+    return {width: r.width, height: r.height};
+  }},
+  'AudioWorkletGlobalScope.sampleRate': {known: 'BaseAudioContext.sampleRate', run: async () => {
+    const ac = new AudioContext();
+    const r = ac.sampleRate;
+    await ac.close();
+    return r;
+  }},
+  'WorkerNavigator.deviceMemory': {known: 'Navigator.deviceMemory', run: async () => navigator.deviceMemory},
+  'GPUDevice.adapterInfo': {known: 'GPUAdapter.info', run: async () => {
+    need(navigator.gpu, 'navigator.gpu');
+    const a = await navigator.gpu.requestAdapter();
+    if (!a) throw fail('NotSupportedError', 'no WebGPU adapter');
+    return a.info;
+  }},
+  'NavigatorUAData.toJSON': {known: 'NavigatorUAData.brands', run: async () => {
+    const u = navigator.userAgentData;
+    return {brands: u.brands, mobile: u.mobile, platform: u.platform};
+  }},
+};
+
+async function runBaselines() {
+  const out = {};
+  for (const [api, b] of Object.entries(BASELINE)) {
+    setStatus(`Reading known baseline for ${api}`);
+    try {
+      const v = await Promise.race([Promise.resolve().then(b.run),
+        sleep(TIMEOUT_MS).then(() => { throw fail('Timeout', `no result in ${TIMEOUT_MS} ms`); })]);
+      out[api] = {known: b.known, v: sortedJSON(await ser(v))};
+    } catch (e) {
+      out[api] = {known: b.known, error: e && e.name ? e.name : String(e)};
+    }
+  }
+  return out;
+}
+
 // Readings from the visitor's own input events (trusted events only).
 const INPUT = {
   wheel: {apis: ['WheelEvent.deltaX', 'WheelEvent.deltaY', 'WheelEvent.momentum'], event: 'wheel',
     read: (e) => ({'WheelEvent.deltaX': e.deltaX, 'WheelEvent.deltaY': e.deltaY,
-      'WheelEvent.momentum': 'momentum' in e ? e.momentum : {$missing: true}, deltaMode: e.deltaMode})},
+      'WheelEvent.momentum': 'momentum' in e ? e.momentum : {$missing: true}, deltaMode: e.deltaMode}),
+    // [HighEntropy] siblings of the deltas, the known baseline for each
+    baseline: (e) => ({'WheelEvent.deltaX': {known: 'WheelEvent.wheelDeltaX', v: e.wheelDeltaX},
+      'WheelEvent.deltaY': {known: 'WheelEvent.wheelDeltaY', v: e.wheelDeltaY}})},
   touch: {apis: ['TouchEvent.shiftKey', 'TouchEvent.metaKey', 'TouchEvent.altKey', 'TouchEvent.ctrlKey', 'Touch.identifier'],
     event: 'touchstart',
     read: (e) => ({'TouchEvent.shiftKey': e.shiftKey, 'TouchEvent.metaKey': e.metaKey, 'TouchEvent.altKey': e.altKey,
@@ -678,7 +775,7 @@ const INPUT = {
 
 const record = {
   schema: SCHEMA, page: null, visit_id: null, device_label: '', started: null, finished: null,
-  ua: navigator.userAgent, ua_low_entropy: null, env: null, auto: null, gated: {}, input: {},
+  ua: navigator.userAgent, ua_low_entropy: null, env: null, auto: null, gated: {}, input: {}, baseline: {},
 };
 
 function $(id) { return document.getElementById(id); }
@@ -705,6 +802,7 @@ async function environment() {
 async function runAuto() {
   $('run').disabled = true;
   record.device_label = $('label').value.trim();
+  try { localStorage.setItem('fptest-label', record.device_label); } catch (e) { /* no storage: the label is typed again */ }
   record.visit_id = crypto.randomUUID();
   record.started = new Date().toISOString();
   record.page = await pageVersion();
@@ -731,6 +829,7 @@ async function runAuto() {
     results[api].ms = Math.round(performance.now() - t0);
   }
   await cleanUp();
+  Object.assign(record.baseline, await runBaselines());
   record.env = await environment();
   record.auto = results;
   record.finished = new Date().toISOString();
@@ -771,6 +870,9 @@ function armInput(key) {
     const vals = spec.read(e);
     const at = new Date().toISOString();
     for (const [api, v] of Object.entries(vals)) record.input[api] = {v: sortedJSON(await ser(v)), at};
+    if (spec.baseline) {
+      for (const [api, b] of Object.entries(spec.baseline(e))) record.baseline[api] = {known: b.known, v: sortedJSON(await ser(b.v)), at};
+    }
     area.classList.add('done');
     area.textContent = 'Read. Thank you.';
     renderTable();
@@ -815,6 +917,7 @@ async function copyText() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  try { $('label').value = localStorage.getItem('fptest-label') || ''; } catch (e) { /* no storage */ }
   $('run').addEventListener('click', runAuto);
   $('copy').addEventListener('click', copyText);
   for (const [key, g] of Object.entries(GATED)) {
