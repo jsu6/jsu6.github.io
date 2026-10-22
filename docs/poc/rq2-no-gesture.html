@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Unprotected Readers</title>
+<link rel="stylesheet" href="poc.css">
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>RQ2 PoC: readers Brave leaves unprotected (no click needed)</h1>
+<p class="muted">Brave's audio and screen defenses hook some readers of the audio device and the display. Other readers
+of the same information pass no hook. The page compares the unprotected readers with a protected sibling,
+<code>navigator.hardwareConcurrency</code>, which Brave farbles per site.</p>
+
+<h2>The code this page runs</h2>
+<pre class="code" id="code"></pre>
+
+<div class="step">
+<h2>Step 1 — Chromium or Chrome: copy the readings</h2>
+<h2>Step 2 — Brave (Shields default): paste them and compare</h2>
+<p>Expected in Brave Standard: <code>devicePixelRatio</code>, <code>sampleRate</code> and <code>baseLatency</code> are the
+same as in Chromium, and <code>hardwareConcurrency</code> differs (it is farbled).</p>
+</div>
+<p><button id="copy">Copy readings</button></p>
+<div id="mine"></div>
+<h2>Readings from the other browser</h2>
+<textarea id="paste" placeholder="Paste the readings copied in Chromium here"></textarea>
+<button id="compare">Compare</button>
+<div id="cmp"></div>
+<textarea id="out" readonly hidden></textarea>
+</div>
+<script src="poc.js"></script>
+<script>
+'use strict';
+// ---- the API calls -------------------------------------------------------------------------------
+function readUnprotected() {
+  const audio = new AudioContext();            // no sound is played; constructing it needs no click
+  const values = {
+    'Window.devicePixelRatio': devicePixelRatio,        // the display's scale factor
+    'BaseAudioContext.sampleRate': audio.sampleRate,    // the audio output device's rate
+    'AudioContext.baseLatency': audio.baseLatency,      // follows the device's buffer size
+  };
+  audio.close();
+  return values;
+}
+function readProtectedSibling() {
+  return {'Navigator.hardwareConcurrency': navigator.hardwareConcurrency};  // Brave farbles this per site
+}
+// ------------------------------------------------------------------------------------------------
+showCode($('code'), readUnprotected, readProtectedSibling);
+const PROTECTED = new Set(Object.keys(readProtectedSibling()));
+Object.entries(Object.assign(readUnprotected(), readProtectedSibling())).forEach(([k, v]) => setReading(k, v));
+renderTable($('mine'), Object.entries(MINE).map(([api, v]) => ({api, mine: v})), '', `this browser (${browserName()})`);
+report({readings: MINE});
+$('copy').addEventListener('click', () => { $('out').hidden = false; copyReadings($('out')); });
+$('compare').addEventListener('click', () => {
+  let gt;
+  try { gt = parsePasted($('paste').value); } catch (e) { $('cmp').textContent = 'Cannot read the pasted text: ' + e.message; return; }
+  renderTable($('cmp'), Object.keys(MINE).map((api) => ({api, gt: gt.readings[api], mine: MINE[api],
+    same: gt.readings[api] === MINE[api], note: PROTECTED.has(api) ? 'protected sibling' : 'not protected'})),
+  `${gt.browser} (ground truth)`, browserName());
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Fullscreen Screen Bypass</title>
+<link rel="stylesheet" href="poc.css">
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>RQ2 PoC: Brave protects <code>screen.width</code>, not the screen</h1>
+<p class="muted">Brave rewrites <code>screen.width</code> in its default (Standard) profile. In fullscreen, the page's
+visual viewport covers the whole screen, and Brave does not rewrite <code>visualViewport.width</code>. So one click
+returns the true screen width. Nothing leaves this page: values are only shown, and copied when you ask.</p>
+
+<h2>The code this page runs</h2>
+<pre class="code" id="code"></pre>
+
+<div class="step">
+<h2>Step 1 — in Chromium or Chrome (the ground truth)</h2>
+<p>This page reads the values as soon as it loads. Optionally click <b>Go fullscreen</b> once, to see that in an
+unprotected browser both values agree. Then click <b>Copy readings</b>.</p>
+</div>
+<div class="step">
+<h2>Step 2 — in Brave, same machine, same display (Shields at their default)</h2>
+<p>Paste the Chromium readings below, then click <b>Go fullscreen</b>. Brave's <code>screen.width</code> differs from
+Chromium's, while the fullscreen <code>visualViewport.width</code> equals Chromium's <code>screen.width</code>.</p>
+</div>
+
+<p>
+<button class="primary" id="fs">Go fullscreen (one click)</button>
+<button id="copy">Copy readings</button>
+</p>
+<div id="mine"></div>
+<h2>Readings from the other browser</h2>
+<textarea id="paste" placeholder='Paste the readings copied in Chromium here: {"browser": "Chromium", "readings": {...}}'></textarea>
+<button id="compare">Compare</button>
+<div id="cmp"></div>
+<div class="verdict" id="verdict" hidden></div>
+<textarea id="out" readonly hidden></textarea>
+</div>
+
+<script src="poc.js"></script>
+<script>
+'use strict';
+// ---- the two API calls --------------------------------------------------------------------------
+function readScreenWidth() { return screen.width; }            // Brave rewrites (protects) this value
+function readViewportWidth() { return visualViewport.width; }  // Brave leaves this value as it is
+
+// In fullscreen the visual viewport is the screen. Fullscreen needs one user click.
+async function fullscreenViewportWidth() {
+  document.documentElement.style.overflow = 'hidden';   // no scrollbar, so the viewport spans the screen
+  await document.documentElement.requestFullscreen();
+  await viewportSettled();                               // the window manager resizes the window
+  const width = readViewportWidth();
+  await document.exitFullscreen();
+  document.documentElement.style.overflow = '';
+  return width;
+}
+// ---- helpers ------------------------------------------------------------------------------------
+async function viewportSettled() {  // until visualViewport.width is unchanged for 1 s
+  let last = -1, stable = 0;
+  for (let i = 0; i < 100 && stable < 10; i++) {
+    await sleep(100);
+    const w = visualViewport.width;
+    stable = w === last ? stable + 1 : 0;
+    last = w;
+  }
+}
+
+showCode($('code'), readScreenWidth, readViewportWidth, fullscreenViewportWidth);
+
+function show() {
+  renderTable($('mine'), Object.entries(MINE).map(([api, v]) => ({api, mine: v})), '', `this browser (${browserName()})`);
+}
+setReading('screen.width', readScreenWidth());
+setReading('visualViewport.width (not fullscreen)', readViewportWidth());
+setReading('devicePixelRatio', devicePixelRatio);
+show();
+
+async function onFullscreen() {
+  setReading('visualViewport.width (fullscreen)', await fullscreenViewportWidth());
+  show();
+  await report({readings: MINE});
+}
+$('fs').addEventListener('click', onFullscreen);
+// Local verification (?report=1): a trusted click anywhere starts the same function.
+if (Q.get('report') === '1') {
+  addEventListener('click', (e) => { if (e.target.id !== 'fs') onFullscreen(); }, {once: true});
+  report({ready: true, run: (Q.get('run') || 'none') + '.ready.0'});
+}
+$('copy').addEventListener('click', () => { $('out').hidden = false; copyReadings($('out')); });
+
+$('compare').addEventListener('click', () => {
+  let gt;
+  try { gt = parsePasted($('paste').value); } catch (e) { $('cmp').textContent = 'Cannot read the pasted text: ' + e.message; return; }
+  // screen.width is an integer number of CSS px; at a fractional devicePixelRatio the fullscreen window can be
+  // one device pixel wider than the screen, so the viewport is compared within 2 CSS px.
+  const G = gt.readings, close = (a, b) => typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 2;
+  const fsW = MINE['visualViewport.width (fullscreen)'];
+  const rows = [
+    {api: 'screen.width', gt: G['screen.width'], mine: MINE['screen.width'], same: G['screen.width'] === MINE['screen.width'],
+     note: 'protected by Brave'},
+    {api: 'visualViewport.width (fullscreen) vs screen.width', gt: G['screen.width'], mine: fsW, same: close(G['screen.width'], fsW),
+     note: 'this browser\'s fullscreen viewport against Chromium\'s screen.width (within 2 CSS px)'},
+    {api: 'visualViewport.width (fullscreen)', gt: G['visualViewport.width (fullscreen)'], mine: fsW,
+     same: G['visualViewport.width (fullscreen)'] === fsW, note: 'the same reading in both browsers (if you went fullscreen in Chromium too)'},
+    {api: 'devicePixelRatio', gt: G['devicePixelRatio'], mine: MINE['devicePixelRatio'], same: G['devicePixelRatio'] === MINE['devicePixelRatio'],
+     note: 'not protected; turns CSS px into device px'},
+  ];
+  renderTable($('cmp'), rows, `${gt.browser} (ground truth)`, browserName());
+  const v = $('verdict');
+  v.hidden = false;
+  if (fsW === undefined) { v.textContent = 'Click "Go fullscreen" first.'; return; }
+  const bypass = !rows[0].same && rows[1].same;  // protected value wrong, unprotected one right
+  v.innerHTML = bypass
+    ? `<span class="ok">Bypass shown.</span> ${browserName()} reports screen.width = ${MINE['screen.width']}, not ${G['screen.width']}, ` +
+      `yet the fullscreen visualViewport.width = ${fsW} gives the true width (${G['screen.width']} CSS px, ` +
+      `${Math.round(fsW * devicePixelRatio)} device px).`
+    : rows[0].same ? 'screen.width is the same in both browsers: this browser does not rewrite it here (no protection to bypass).'
+      : 'The fullscreen viewport does not match the ground truth (was the window fullscreen on the same display?).';
+});
+</script>
+</body>
+</html>

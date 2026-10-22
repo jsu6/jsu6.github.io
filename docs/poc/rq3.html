@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Discovered APIs Check</title>
+<link rel="stylesheet" href="poc.css">
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>RQ3 PoC: APIs the slice ranking found outside every known list</h1>
+<p class="muted">These are the six top-100 candidates that changed with one configuration knob on our machine
+(sample rate, window size, fonts or language), with nothing else changed. Each value is read the way a page would read
+it. Read this page twice on the same device and browser: every value should repeat. Then read it on another device
+or browser and compare: some values should differ. Nothing leaves this page.</p>
+
+<h2>The code this page runs</h2>
+<pre class="code" id="code"></pre>
+<p><button class="primary" id="read">Read the six APIs (one click: audio needs it)</button><button id="copy">Copy readings</button></p>
+<div id="mine"></div>
+<h2>Readings from another visit, device or browser</h2>
+<textarea id="paste" placeholder="Paste readings copied from another visit"></textarea>
+<button id="compare">Compare</button>
+<div id="cmp"></div>
+<textarea id="out" readonly hidden></textarea>
+</div>
+<script src="poc.js"></script>
+<script>
+'use strict';
+// ---- one function per API: what the page reads -------------------------------------------------------
+async function audioWorkletSampleRate() {            // AudioWorkletGlobalScope.sampleRate (knob: sample rate)
+  const ctx = new AudioContext();
+  await ctx.audioWorklet.addModule('rq3-worklet.js');
+  const node = new AudioWorkletNode(ctx, 'fproot-rate');
+  const rate = await new Promise((res) => { node.port.onmessage = (m) => res(m.data); });
+  await ctx.close();
+  return rate;
+}
+async function iirFrequencyResponse() {               // IIRFilterNode.getFrequencyResponse (knob: sample rate)
+  const ctx = new AudioContext();
+  const filter = ctx.createIIRFilter([0.1, 0.2, 0.1], [1, -0.6, 0.2]);
+  const hz = new Float32Array([50, 440, 1000, 5000, 15000]);
+  const mag = new Float32Array(5), phase = new Float32Array(5);
+  filter.getFrequencyResponse(hz, mag, phase);
+  await ctx.close();
+  return Array.from(mag, (x) => +x.toFixed(6));
+}
+async function analyserNodeConstructor() {            // AnalyserNode constructor (knob: sample rate)
+  const ctx = new AudioContext();
+  const node = new AnalyserNode(ctx, {fftSize: 2048});
+  const v = {channelCount: node.channelCount, frequencyBinCount: node.frequencyBinCount, contextRate: node.context.sampleRate};
+  await ctx.close();
+  return v;
+}
+async function convolverNodeConstructor() {           // ConvolverNode constructor (knob: sample rate)
+  const ctx = new AudioContext();
+  const buffer = ctx.createBuffer(2, Math.round(ctx.sampleRate / 10), ctx.sampleRate);
+  const node = new ConvolverNode(ctx, {buffer});
+  const v = {length: node.buffer.length, sampleRate: node.buffer.sampleRate};
+  await ctx.close();
+  return v;
+}
+function svgCharNumAtPosition() {                    // SVGTextContentElement.getCharNumAtPosition (knob: fonts)
+  const host = document.createElement('div');
+  host.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="40"><text x="1" y="20" style="font:16px sans-serif">abcdefghij</text></svg>';
+  document.body.appendChild(host);
+  const text = host.querySelector('text');
+  const out = [5, 15, 25, 35, 45, 55, 65, 75].map((x) => text.getCharNumAtPosition(new DOMPoint(x, 15)));
+  host.remove();
+  return out;
+}
+function viewportSegments() {                        // Viewport.segments (knob: window size)
+  if (!window.viewport) return 'window.viewport not exposed in this browser';
+  return window.viewport.segments.map((r) => [r.x, r.y, r.width, r.height]);
+}
+// ----------------------------------------------------------------------------------------------------
+const PROBES = {'AudioWorkletGlobalScope.sampleRate': audioWorkletSampleRate, 'IIRFilterNode.getFrequencyResponse': iirFrequencyResponse,
+  'AnalyserNode.constructor': analyserNodeConstructor, 'ConvolverNode.constructor': convolverNodeConstructor,
+  'SVGTextContentElement.getCharNumAtPosition': svgCharNumAtPosition, 'Viewport.segments': viewportSegments};
+showCode($('code'), ...Object.values(PROBES));
+
+async function readAll() {
+  for (const [api, f] of Object.entries(PROBES)) {
+    try { setReading(api, await f()); } catch (e) { setReading(api, 'error: ' + (e && e.name)); }
+  }
+  setReading('(context) devicePixelRatio, window', [devicePixelRatio, innerWidth, innerHeight]);
+  renderTable($('mine'), Object.entries(MINE).map(([api, v]) => ({api, mine: v})), '', `this visit (${browserName()})`);
+  await report({readings: MINE});
+}
+$('read').addEventListener('click', readAll);
+// Local verification (?report=1): a trusted click anywhere reads the APIs.
+if (Q.get('report') === '1') {
+  addEventListener('click', (e) => { if (e.target.id !== 'read') readAll(); }, {once: true});
+  report({ready: true, run: (Q.get('run') || 'none') + '.ready.0'});
+}
+$('copy').addEventListener('click', () => { $('out').hidden = false; copyReadings($('out')); });
+$('compare').addEventListener('click', () => {
+  let gt;
+  try { gt = parsePasted($('paste').value); } catch (e) { $('cmp').textContent = 'Cannot read the pasted text: ' + e.message; return; }
+  renderTable($('cmp'), Object.keys(MINE).map((api) => ({api, gt: gt.readings[api], mine: MINE[api],
+    same: JSON.stringify(gt.readings[api]) === JSON.stringify(MINE[api])})), `${gt.browser} (pasted)`, browserName());
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>FProot Proofs of Concept</title>
+<link rel="stylesheet" href="poc.css">
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>FProot proofs of concept</h1>
+<p class="muted">Minimal pages behind the numbers of the paper <i>Slicing to the Roots</i>. Each page prints the exact
+code it runs and only shows values on the page; nothing is sent anywhere. Pages that compare browsers ask you to copy
+readings in one browser and paste them in the other.</p>
+<h2>RQ1: one source, many APIs</h2>
+<ul><li><a href="rq1-one-message.html">Three APIs, one message</a>: Screen.width, devicePixelRatio and
+VisualViewport.width move together, because they read one Mojo message.</li></ul>
+<h2>RQ2: defenses that protect APIs, not information (open in Chromium first, then in Brave)</h2>
+<ul>
+<li><a href="rq2-fullscreen.html">Fullscreen screen bypass</a>: Brave rewrites screen.width, but in fullscreen
+visualViewport.width is the true screen width. Needs one click.</li>
+<li><a href="rq2-no-gesture.html">Unprotected readers</a>: devicePixelRatio, the audio sample rate and base latency
+are the same as in Chromium, while hardwareConcurrency is farbled.</li>
+<li><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a>: getImageData is farbled, but the same canvas read
+through WebGL readPixels is not.</li>
+</ul>
+<h2>RQ3: APIs found outside prior lists</h2>
+<ul><li><a href="rq3.html">Six discovered APIs</a>: values that repeat on one device and browser and change with its
+configuration.</li></ul>
+</div>
+</body>
+</html>

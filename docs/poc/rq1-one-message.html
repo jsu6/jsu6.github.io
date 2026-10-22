@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Three APIs One Message</title>
+<link rel="stylesheet" href="poc.css">
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>RQ1 PoC: three APIs, one message (paper Figure 1)</h1>
+<p class="muted">FProot's slices of <code>Screen.width</code>, <code>Window.devicePixelRatio</code> and
+<code>VisualViewport.width</code> all end in one Mojo message, <code>VisualProperties</code>. The browser sends it
+whenever the page's widget changes, and it carries the screen, the zoom and the visible size. Change any of these and
+watch the three APIs move together. A defense that rewrites only one of them leaves the message readable through
+the others.</p>
+<h2>The code this page runs (on every resize)</h2>
+<pre class="code" id="code"></pre>
+<div id="live"></div>
+<h2>Try</h2>
+<ul>
+<li><b>Zoom</b> (Ctrl/Cmd + or −): <code>devicePixelRatio</code> and <code>visualViewport.width</code> change together
+(VisualProperties.zoom_level), and so does <code>screen.width</code> in CSS px.</li>
+<li><b>Resize the window</b>: only <code>visualViewport.width</code> changes (VisualProperties.visible_viewport_size).</li>
+<li><b>Move the window to another monitor</b>: <code>screen.width</code> and <code>devicePixelRatio</code> change
+(VisualProperties.screen_infos).</li>
+</ul>
+<h2>Log</h2>
+<div id="log"></div>
+</div>
+<script src="poc.js"></script>
+<script>
+'use strict';
+function readThree() {
+  return {'Screen.width': screen.width, 'Window.devicePixelRatio': devicePixelRatio, 'VisualViewport.width': visualViewport.width};
+}
+showCode($('code'), readThree);
+const log = [];
+let last = null;
+function update() {
+  const now = readThree();
+  renderTable($('live'), Object.entries(now).map(([api, v]) => ({api, mine: typeof v === 'number' ? +v.toFixed(3) : v})), '', 'now');
+  if (last) {
+    const moved = Object.keys(now).filter((k) => now[k] !== last[k]);
+    if (moved.length) log.unshift(`${new Date().toLocaleTimeString()}: ${moved.join(', ')} changed`);
+  }
+  last = now;
+  $('log').innerHTML = log.slice(0, 12).map((x) => `<div class="muted">${x}</div>`).join('');
+}
+update();
+addEventListener('resize', update);
+visualViewport.addEventListener('resize', update);
+setInterval(update, 1000);  // moving to another monitor fires no resize in every browser
+</script>
+</body>
+</html>
