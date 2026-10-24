@@ -10,7 +10,8 @@
 <body>
 <div class="page">
 <div class="mark"></div>
-<h1>RQ2 PoC: readers Brave leaves unprotected (no click needed)</h1>
+<p class="muted"><a href="./">RQ2 proofs of concept</a> / unprotected readers</p>
+<h1>Readers Brave leaves unprotected (no click needed)</h1>
 <p class="muted">Brave's audio, screen and WebGL defenses hook some readers of the audio device, the display and the
 GPU. Other readers of the same information pass no hook, or pass a hook that leaves their value as it is. The page
 compares them with protected siblings: <code>navigator.hardwareConcurrency</code>, which Brave farbles per site, and
@@ -20,8 +21,11 @@ a WebGL limit that the same <code>getParameter</code> hook lowers.</p>
 <pre class="code" id="code"></pre>
 
 <div class="step">
-<h2>Step 1 — Chromium or Chrome: copy the readings</h2>
-<h2>Step 2 — Brave (Shields default): paste them and compare</h2>
+<h2>How to check</h2>
+<ol>
+<li>In Chromium or Chrome: the page reads the values on load. Click <b>Copy readings</b>.</li>
+<li>In Brave on the same machine (Shields at their default): paste them below and click <b>Compare</b>.</li>
+</ol>
 <p>Expected in Brave Standard: <code>devicePixelRatio</code>, <code>sampleRate</code>, <code>baseLatency</code> and the
 WebGL renderer string are the same as in Chromium on the same machine, while <code>hardwareConcurrency</code> and the
 WebGL limits differ (farbled, and a few limits lowered by one on each site).</p>

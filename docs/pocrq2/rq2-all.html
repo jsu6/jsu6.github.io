@@ -10,68 +10,99 @@
 <body>
 <div class="page">
 <div class="mark"></div>
-<h1>RQ2 PoC: every reader our run found circumventing a Brave defense</h1>
-<p class="muted">The 305-API run graded 226 APIs as reaching information a Brave defense protects without a hook that
-acts at Brave's default level. This page runs the exact probe our lab ran for the 189 a page can read (the other 37
-need a paint worklet, hardware or a permission prompt) and lists each one's value. Nothing leaves this page.</p>
+<p class="muted"><a href="./">RQ2 proofs of concept</a> / every circumventing reader</p>
+<h1>Every reader that circumvents a Brave defense, without a permission</h1>
+<p>Our analysis predicts that 226 APIs reach information a Brave defense protects without passing a hook that acts at
+Brave's default level. This page runs the lab's probe on the <b id="n"></b> of them that a page reads
+without a permission or a browser prompt. Here the ground truth is Brave itself with fingerprinting protection off: the
+same browser, so only the defense differs (Brave also differs from Chromium in ways no defense causes: its brands,
+codecs and window size). Next to each value the page shows what our lab saw. Nothing leaves this page.</p>
 
 <div class="step">
-<h2>How to verify</h2>
+<h2>How to check</h2>
 <ol>
-<li>In Chromium or Chrome, click <b>Run the probe</b> (about 30 s; scroll the mouse wheel over the page when asked, for
-the wheel readers), then <b>Copy readings</b>.</li>
-<li>In Brave on the same machine, Shields at their default, run it again and paste the Chromium readings.</li>
-<li>Each row then shows Chromium's value (the ground truth), Brave's value, and our lab's outcome. A
-<span class="ok">leaked</span> row should read the same in both browsers; a <span class="bad">rewritten</span> one
-should differ. Partly: the second value (WebGL) leaks while the first (getImageData) is farbled.</li>
+<li>In Brave, open the Shields panel for this site and turn fingerprinting protection off (Shields → Block
+fingerprinting → off), reload, click <b>Run</b>. When asked, move the mouse and scroll the wheel over the page (the
+wheel and mouse readers need an event); the run takes about 30 s. Click <b>Copy readings</b>.</li>
+<li>Turn fingerprinting protection back to its default (Standard), reload, click <b>Run</b>, paste the readings and
+click <b>Compare</b>.</li>
+<li>A row our lab graded <span class="tag leaked">leaked</span> should read the same with and without protection.
+<span class="tag rewritten">rewritten</span> rows should differ; Brave farbles some of them per site, so on one site a
+value can match (the lab column lists one value per site). For <span class="tag partly">partly</span> rows,
+the first value (read through <code>getImageData</code>) is farbled and the second (read through WebGL) leaks.</li>
 </ol>
-<p class="muted">The probe also asks for the Screen details permission (window management); allowing it lets the
-ScreenDetailed readers run.</p>
 </div>
 
-<p><button class="primary" id="run">Run the probe</button>
+<p><button class="primary" id="run">Run</button>
 <button id="copy" disabled>Copy readings</button>
 <span id="status" class="muted"></span></p>
-<div id="t" hidden></div>
-<h2>Readings from Chromium</h2>
-<textarea id="paste" placeholder="Paste the readings copied in Chromium here"></textarea>
-<p><button id="compare">Compare</button>
-<label class="muted">Show <select id="filter">
-<option value="">all</option><option>leaked</option><option>partly</option><option>rewritten</option>
+<textarea id="out" readonly hidden></textarea>
+
+<h2>Readings with protection off</h2>
+<textarea id="paste" placeholder="Paste the readings copied in Brave with fingerprinting protection off"></textarea>
+<p><button id="compare">Compare</button> <span id="cmpstatus" class="muted"></span></p>
+
+<div id="summary"></div>
+<p><label>Show <select id="filter">
+<option value="">every row</option><option>leaked</option><option>partly</option><option>rewritten</option>
 <option>indistinguishable</option><option>can't check</option></select></label></p>
 <div id="table"></div>
-<textarea id="out" readonly hidden></textarea>
+
+<h2>Left out</h2>
+<p class="muted" id="leftout"></p>
 <p class="muted">The probe's code: <a href="probes305.js">probes305.js</a>, generated from the lab page by
-analysis/rq2/poc_page.py. Back to <a href="./">the RQ2 pages</a>.</p>
-<div style="height:200vh" aria-hidden="true"></div>
+analysis/rq2/poc_page.py (the lines it changes are marked <code>website:</code>).</p>
+<div style="height:150vh" aria-hidden="true"></div>
 </div>
 <script src="probes305.js"></script>
 <script>
 'use strict';
-if (!Q.has('wait_input')) location.replace('?wait_input=1');  // the probe waits 15 s for wheel and mouse input
 const el = (id) => document.getElementById(id);
 let MINE = null, GT = null;
-// one value per probe reading: the repeats if they differ, else the value
 const one = (reps) => { if (!reps) return undefined; const s = reps.map((v) => JSON.stringify(v)); return new Set(s).size === 1 ? reps[0] : reps; };
 const fmt = (v) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
-const short = (s) => (s.length > 160 ? s.slice(0, 157) + '…' : s);
-const esc = (s) => s.replace(/[&<>]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
-const valueOf = (R, api) => LAB[api].keys.map((k) => one(R[k]));
+const short = (s) => (s.length > 120 ? s.slice(0, 117) + '…' : s);
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+const valuesOf = (R, api) => LAB[api].keys.map((k) => one(R[k]));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const EXPECT = {leaked: 'same', rewritten: 'differs', partly: 'first differs, second same'};
+
+function verdict(api) {  // this browser against the pasted readings (protection off), per read-back route
+  if (!MINE || !GT) return null;
+  const m = valuesOf(MINE, api), g = valuesOf(GT, api);
+  return m.map((v, i) => (v === undefined || g[i] === undefined ? null : same(v, g[i])));
+}
 
 function render() {
   const f = el('filter').value;
   const rows = Object.entries(LAB).filter(([, x]) => !f || x.outcome === f);
-  el('table').innerHTML = '<div class="scroll"><table class="three"><thead><tr><th>API</th><th>Chromium (ground truth)</th>' +
-    '<th>this browser</th><th>our lab (Brave 1.92.144)</th></tr></thead><tbody>' +
-    rows.map(([api, x]) => {
-      const mine = MINE ? valueOf(MINE, api) : null, gt = GT ? valueOf(GT, api) : null;
-      const cmp = mine && gt ? mine.map((v, i) => JSON.stringify(v) === JSON.stringify(gt[i])) : null;
-      const cell = (vs) => (vs ? vs.map((v, i) => `<div class="v">${esc(short(fmt(v)))}` +
-        (cmp && vs === mine ? ` <span class="${cmp[i] ? 'ok' : 'bad'}">${cmp[i] ? 'same' : 'differs'}</span>` : '') + '</div>').join('') : '');
-      const cls = x.outcome === 'leaked' ? 'ok' : x.outcome === 'rewritten' ? 'bad' : 'muted';
-      return `<tr><td><div class="k">${api}</div><div class="muted">${x.kind}; ${x.defenses.length} defense(s)</div></td>` +
-        `<td>${cell(gt)}</td><td>${cell(mine)}</td><td class="${cls}">${x.outcome}</td></tr>`;
+  el('table').innerHTML = '<div class="scroll"><table class="all"><thead><tr><th>API</th><th>protection off (pasted)</th>' +
+    '<th>this browser</th><th>our lab (Brave 1.92.144)</th></tr></thead><tbody>' + rows.map(([api, x]) => {
+      const v = verdict(api);
+      const vals = (R, mark) => (R ? valuesOf(R, api).map((val, i) => `<div class="v">${esc(short(fmt(val)))}` +
+        (mark && v && v[i] !== null ? ` <span class="${v[i] ? 'same' : 'diff'}">${v[i] ? 'same' : 'differs'}</span>` : '') +
+        '</div>').join('') : '');
+      return `<tr><td><div class="k">${api}</div><span class="tag ${x.outcome.replace(/\W/g, '')}">${x.outcome}</span></td>` +
+        `<td>${vals(GT, false)}</td><td>${vals(MINE, true)}</td>` +
+        `<td class="lab"><div>off: <span class="v">${esc(short(x.off))}</span></div>` +
+        `<div>Standard: <span class="v">${esc(short(x.brave))}</span></div>` +
+        `<div>Chromium: <span class="v">${esc(short(x.chromium))}</span></div></td></tr>`;
     }).join('') + '</tbody></table></div>';
+  summary();
+}
+
+function summary() {  // per lab outcome: rows here that read as the lab found
+  if (!MINE || !GT) { el('summary').innerHTML = ''; return; }
+  const n = {};
+  for (const [api, x] of Object.entries(LAB)) {
+    const v = verdict(api);
+    if (!v || v.includes(null) || !EXPECT[x.outcome]) continue;
+    const ok = x.outcome === 'leaked' ? v.every(Boolean) : x.outcome === 'rewritten' ? !v.every(Boolean) : !v[0] && v[1];
+    n[x.outcome] = n[x.outcome] || [0, 0];
+    n[x.outcome][0] += ok; n[x.outcome][1] += 1;
+  }
+  el('summary').innerHTML = '<div class="verdict">' + Object.entries(n).map(([o, [ok, all]]) =>
+    `<div><span class="tag ${o}">${o}</span> ${ok} of ${all} read as in our lab (expected: ${EXPECT[o]} as with protection off)</div>`).join('') + '</div>';
 }
 
 window.onProbeDone = (rec) => {
@@ -83,7 +114,7 @@ window.onProbeDone = (rec) => {
 };
 el('run').onclick = () => {
   el('run').disabled = true;
-  el('status').textContent = 'running… scroll the mouse wheel over the page in the last 15 s';
+  el('status').textContent = 'running… move the mouse and scroll the wheel over the page';
   startProbe().catch((e) => { el('status').textContent = 'probe error: ' + e; el('run').disabled = false; });
 };
 el('copy').onclick = () => {
@@ -94,10 +125,15 @@ el('copy').onclick = () => {
   if (navigator.clipboard) navigator.clipboard.writeText(out.value).catch(() => {});
 };
 el('compare').onclick = () => {
-  try { GT = JSON.parse(el('paste').value).readings; } catch (e) { el('table').textContent = 'Cannot read the pasted text: ' + e.message; return; }
+  try { GT = JSON.parse(el('paste').value).readings; } catch (e) { el('cmpstatus').textContent = 'cannot read the pasted text: ' + e.message; return; }
+  el('cmpstatus').textContent = MINE ? '' : 'now click Run in this browser';
   render();
 };
 el('filter').onchange = render;
+el('n').textContent = Object.keys(LAB).length;
+el('leftout').innerHTML = `Needs a permission or a browser prompt (${LEFT_OUT.permission.length}): ` +
+  LEFT_OUT.permission.join(', ') + `. Not readable by a page here (${LEFT_OUT['cannot read'].length}: paint worklets, ` +
+  `a gamepad or a touch screen): ` + LEFT_OUT['cannot read'].join(', ') + '.';
 render();
 if (Q.get('report') === '1') el('run').onclick();  // local verification (analysis/rq2/poc_verify.py): start on load
 </script>

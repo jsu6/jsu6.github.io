@@ -10,26 +10,25 @@
 <body>
 <div class="page">
 <div class="mark"></div>
-<h1>RQ3 PoC: read the 84 newly found APIs on your device</h1>
-<p class="muted">The slice model's top 100 APIs include 84 that no prior fingerprinting work uses. This page runs, for
-each of them, the same probe our lab ran (item 3.4) and lists the raw value. It does not judge or compare. Copy the
+<h1>RQ3 PoC: read the newly found APIs on your device</h1>
+<p class="muted">The slice model's top 100 APIs include <span class="nnew"></span> that no prior fingerprinting work uses;
+<span class="n"></span> of them a page reads without asking for a permission. This page runs, for each of those, the same
+probe our lab ran (item 3.4) and lists the raw value. It asks for no permission. It does not judge or compare. Copy the
 results and send them to us; readings from many devices, browsers and settings are aggregated later to see which
 values differ between devices. Nothing is sent by the page itself.</p>
 
 <div class="step">
 <h2>How to take part</h2>
 <ol>
-<li>Optional, before running: in Chrome or Edge on a desktop, click <b>Allow screen and font access</b> and allow
-both prompts (9 probes need them). If you have a gamepad, press one of its buttons.</li>
-<li>Click <b>Run all 84</b>. It takes up to a few minutes; keep this tab in front. When asked, scroll the mouse wheel
+<li>Optional, before running: if you have a gamepad, press one of its buttons.</li>
+<li>Click <b>Run all</b>. It takes up to a few minutes; keep this tab in front. When asked, scroll the mouse wheel
 or touch the grey box, and allow the test window to open.</li>
 <li>Click <b>Copy results</b> and paste the text into a message to us. Running again later, or in another browser,
 helps too.</li>
 </ol>
 </div>
 
-<p><button id="perm">Allow screen and font access</button>
-<button class="primary" id="run">Run all 84</button>
+<p><button class="primary" id="run">Run all</button>
 <button id="copy" disabled>Copy results</button>
 <span id="status" class="muted"></span></p>
 <div id="box" class="inputbox" hidden>Scroll the mouse wheel over this box, or touch it (10 s)</div>
@@ -38,11 +37,12 @@ helps too.</li>
 <div id="table"></div>
 
 <h2>The code</h2>
-<p class="muted"><a href="probes.js">probes.js</a> holds the 84 probes, copied unchanged from the lab page with the
+<p class="muted"><a href="probes.js">probes.js</a> holds the <span class="n"></span> probes, copied unchanged from the lab page with the
 helpers they call. The script at the bottom of this page runs them. Seven probes the lab could not run, because they
 need a person (a popup opened by a click; a wheel or touch event), are replaced there by versions that use your
 click or input. The lab column is the verdict from out/experiments/3.4/verdicts.csv (TP: changed with one setting
-and stable on reload); a different verdict with the permissions granted is in brackets. The lab ran Chromium 150
+and stable on reload). Left out, because a page reads them only after a permission, a chooser or a picker:
+<span id="leftout"></span>. The lab ran Chromium 150
 with experimental web platform features on, so in a stock browser some probes report NotExposed; that is a
 result too.</p>
 <p class="muted">RQ2's pages are at <a href="../pocrq2/">pocrq2</a>.</p>
@@ -112,10 +112,10 @@ async function runOne(api) {  // as the lab's runAll: the serialized value, or t
 function render() {
   $('table').innerHTML = '<div class="scroll"><table><thead><tr><th>#</th><th>API</th><th>lab</th><th>your value</th></tr></thead><tbody>' +
     Object.keys(PROBES).map((api) => {
-      const [rank, lab, granted] = LAB[api];
+      const [rank, lab] = LAB[api];
       const r = results[api];
       const val = !r ? '' : 'v' in r ? esc(short(r.v)) : `<span class="muted">${esc(r.error)}: ${esc(short(r.msg))}</span>`;
-      return `<tr><td>${rank}</td><td>${api}</td><td class="muted">${lab}${granted && granted !== lab ? ` (${granted})` : ''}</td><td class="v">${val}</td></tr>`;
+      return `<tr><td>${rank}</td><td>${api}</td><td class="muted">${lab}</td><td class="v">${val}</td></tr>`;
     }).join('') + '</tbody></table></div>';
 }
 
@@ -126,25 +126,14 @@ async function environment() {  // the configuration the readings came from
     dark: matchMedia('(prefers-color-scheme: dark)').matches, p3: matchMedia('(color-gamut: p3)').matches,
     hdr: matchMedia('(dynamic-range: high)').matches};
   try { const ac = new AudioContext(); env.sampleRate = ac.sampleRate; await ac.close(); } catch (e) { env.sampleRate = e.name; }
-  env.permissions = {};
-  for (const name of ['window-management', 'local-fonts']) {
-    try { env.permissions[name] = (await navigator.permissions.query({name})).state; } catch (e) { env.permissions[name] = e.name; }
-  }
   return env;
 }
-
-$('perm').onclick = async () => {
-  try { await window.getScreenDetails(); } catch (e) { /* the probes report it */ }
-  try { await window.queryLocalFonts(); } catch (e) { /* the probes report it */ }
-  $('status').textContent = 'permissions asked';
-};
 
 async function runAll() {
   $('run').disabled = true;
   $('copy').disabled = true;
   popup = window.open('about:blank', 'pocrq3', 'width=320,height=240,left=40,top=40');  // first: needs this click
-  const last = ['Window.restore', 'Window.maximize', 'Window.minimize'];  // may change the window: run last, as the lab
-  const order = Object.keys(PROBES).filter((k) => !last.includes(k)).concat(last);
+  const order = Object.keys(PROBES);
   let n = 0;
   for (const api of order) {
     $('status').textContent = `${++n} / ${order.length}: ${api}`;
@@ -152,7 +141,7 @@ async function runAll() {
     if (api === 'Window.moveBy' && popup && !popup.closed) popup.close();  // the last popup probe (rank 6)
     render();
   }
-  rec = {page: 'pocrq3', version: '2026-10-24', time: new Date().toISOString(), ua: navigator.userAgent,
+  rec = {page: 'pocrq3', version: '2026-10-24b', time: new Date().toISOString(), ua: navigator.userAgent,
     brands: navigator.userAgentData ? navigator.userAgentData.brands : null, env: await environment(),
     n: order.length, results};
   $('status').textContent = 'done: copy the results';
@@ -178,6 +167,9 @@ $('copy').onclick = () => {
   if (navigator.clipboard) navigator.clipboard.writeText(out.value).then(() => { $('status').textContent = 'copied'; }, () => {});
 };
 
+document.querySelectorAll('.n').forEach((e) => { e.textContent = Object.keys(PROBES).length; });
+document.querySelectorAll('.nnew').forEach((e) => { e.textContent = NEW; });
+$('leftout').textContent = LEFT_OUT.join(', ');
 render();
 </script>
 </body>
