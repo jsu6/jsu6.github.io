@@ -48,7 +48,7 @@ function readTransferToImageBitmap() {
 
 // ------------------------------------------------------------------ audio
 // A 10 kHz triangle wave through a compressor, rendered offline (nothing is played).
-async function render() {
+async function renderSound() {
   const ctx = new OfflineAudioContext(1, 44100, 44100);
   const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
   const comp = ctx.createDynamicsCompressor();
@@ -58,7 +58,7 @@ async function render() {
 }
 // hooked: Brave adds per-site noise to the samples getChannelData returns
 async function readGetChannelData() {
-  const samples = (await render()).getChannelData(0);
+  const samples = (await renderSound()).getChannelData(0);
   let s = 0; for (const x of samples) s += Math.abs(x);
   return s;
 }
@@ -68,7 +68,7 @@ const SUM = URL.createObjectURL(new Blob([`registerProcessor('sum', class extend
   process(inputs) { for (const ch of inputs[0] || []) for (const x of ch) this.s += Math.abs(x); return true; }
 });`], {type: 'text/javascript'}));
 async function readThroughWorklet() {
-  const buffer = await render();
+  const buffer = await renderSound();
   const ctx = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
   await ctx.audioWorklet.addModule(SUM);
   const src = new AudioBufferSourceNode(ctx, {buffer}), sum = new AudioWorkletNode(ctx, 'sum');
@@ -83,7 +83,8 @@ function readScreenSize() { return `${screen.width} × ${screen.height}`; }
 // route: in fullscreen the visual viewport is the screen (called from the Run click, which fullscreen needs)
 async function readFullscreenViewport() {
   document.documentElement.style.overflow = 'hidden';  // no scrollbar, so the viewport spans the screen
-  await document.documentElement.requestFullscreen();
+  await Promise.race([document.documentElement.requestFullscreen(),
+    sleep(5000).then(() => { throw new Error('fullscreen did not start in 5 s'); })]);
   let last = -1, stable = 0;  // wait until the window manager has resized the window (the width unchanged for 1 s)
   for (let i = 0; i < 100 && stable < 10; i++) {
     await sleep(100);
@@ -91,7 +92,7 @@ async function readFullscreenViewport() {
     last = visualViewport.width;
   }
   const size = `${Math.round(visualViewport.width)} × ${Math.round(visualViewport.height)}`;
-  await document.exitFullscreen();
+  await Promise.race([document.exitFullscreen(), sleep(2000)]);
   document.documentElement.style.overflow = '';
   return size;
 }
@@ -122,7 +123,9 @@ async function sha(bytes) {  // the first 8 bytes of SHA-256, in hex
   const d = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-const attempt = async (f) => { try { return await f(); } catch (e) { return 'error: ' + (e && e.name || e); } };
+const attempt = async (f) => {
+  try { return await f(); } catch (e) { return 'error: ' + (e && e.name || 'Error') + (e && e.message ? ': ' + e.message : ''); }
+};
 
 async function readAll() {  // row key -> {hooked, route}; the screen first, while the Run click still allows fullscreen
   const size = readScreenSize();
@@ -177,13 +180,17 @@ function showCode(id, ...fns) { $(id).textContent = fns.map((f) => f.toString())
 
 document.addEventListener('DOMContentLoaded', () => {
   showCode('code-canvas', draw, readGetImageData, readToDataURL, readTransferToImageBitmap, pixelsThroughWebGL);
-  showCode('code-audio', render, readGetChannelData, readThroughWorklet);
+  showCode('code-audio', renderSound, readGetChannelData, readThroughWorklet);
   showCode('code-screen', readScreenSize, readFullscreenViewport);
   render();
   $('run').onclick = async () => {
     $('run').disabled = true;
     $('run-status').textContent = 'reading… (fullscreen for a moment)';
-    MINE = await readAll();
+    try { MINE = await readAll(); } catch (e) {
+      $('run-status').textContent = 'error: ' + (e && e.message || e);
+      $('run').disabled = false;
+      return;
+    }
     $('run-status').textContent = 'done';
     $('run').disabled = false;
     $('copy').disabled = false;
