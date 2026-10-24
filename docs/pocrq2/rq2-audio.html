@@ -14,29 +14,32 @@
 <h1>Audio: Brave protects <code>AudioBuffer</code> reads, not the rendered samples</h1>
 <p>Audio fingerprinting renders a short sound offline and sums its samples, which differ slightly between
 machines. Brave adds per-site noise where a page reads the samples from an <code>AudioBuffer</code>
-(<code>getChannelData</code>, <code>copyFromChannel</code>). Our analysis shows that the samples
-<code>OfflineAudioContext.startRendering</code> produces reach a page by another path: played into a second offline
-context, an <code>AudioWorklet</code> reads them directly, without passing those hooks.</p>
+(<code>getChannelData</code>, <code>copyFromChannel</code>). Our analysis finds that
+<code>OfflineAudioContext.startRendering</code> reaches a source Brave's audio defense protects without passing those
+hooks. That shared source is a configuration flag (the render quantum setting), not the samples themselves: the
+samples are computed in the renderer and have no source of their own. So this page tests the consequence directly:
+played into a second offline context, an <code>AudioWorklet</code> reads the rendered samples without calling an
+<code>AudioBuffer</code> method.</p>
 
 <h2>The code this page runs</h2>
 <pre class="code" id="code"></pre>
 
 <h2>How to check</h2>
 <ol>
-<li>In Brave, open this page and turn fingerprinting protection off for the site (Shields panel: turn off
-<i>Block fingerprinting</i>), reload, and click <b>Copy readings</b>.</li>
-<li>Turn fingerprinting protection back to its default (Standard), reload, paste the readings below and click
-<b>Compare</b>.</li>
+<li>Open this page in an unprotected browser on the same machine and click <b>Copy readings</b>: Chromium or
+Chrome, or Brave with fingerprinting protection off for the site (Shields panel: turn off <i>Block
+fingerprinting</i>).</li>
+<li>Open it in Brave with Shields at their default (Standard), paste the readings below and click <b>Compare</b>.</li>
 </ol>
-<p>Expected in Brave Standard: the getChannelData sum differs from protection off (farbled), and the worklet sum
-is the same as with protection off. Even without pasting, the line under the table shows half of it: with no
+<p>Expected in Brave Standard: the getChannelData sum differs from the unprotected browser (farbled), and the worklet sum
+is the same as in the unprotected browser. Even without pasting, the line under the table shows half of it: with no
 protection both sums are equal; in Brave Standard they differ.</p>
 
 <h2>Readings in this browser</h2>
 <div id="result" class="muted">reading…</div>
 <p><button id="copy" disabled>Copy readings</button></p>
 <textarea id="out" readonly hidden></textarea>
-<textarea id="paste" placeholder="Paste the readings copied with fingerprinting protection off"></textarea>
+<textarea id="paste" placeholder="Paste the readings copied in the unprotected browser"></textarea>
 <p><button class="primary" id="compare">Compare</button></p>
 <p class="muted">Brave 1.92.144, two sites, two sessions each: the worklet sum equalled the value with protection off;
 getChannelData was farbled (out/rq2/verify/bypasses/verdicts.csv).</p>
@@ -76,14 +79,12 @@ async function sumThroughWorklet() {
 // ---------------------------------------------------------------------------------------------------------
 showCode($('code'), render, sumThroughGetChannelData, sumThroughWorklet);
 const BYPASS = 'OfflineAudioContext.startRendering → AudioWorklet';
-poc([
-  {what: 'sum of the rendered samples', protectedApi: 'AudioBuffer.getChannelData', bypassApi: BYPASS},
-], async () => {
+poc('The sum of the rendered samples', [{api: 'AudioBuffer.getChannelData', bypass: BYPASS}], async () => {
   const a = await sumThroughGetChannelData(), b = await sumThroughWorklet();
   return {'AudioBuffer.getChannelData': a, [BYPASS]: b};
 }, (v) => (v['AudioBuffer.getChannelData'] === v[BYPASS]
   ? 'The two sums are equal: this browser does not farble getChannelData here.'
-  : 'The two sums differ: getChannelData is farbled, and the worklet reads the samples another way (compare it with protection off above).'));
+  : 'The two sums differ: getChannelData is farbled, and the worklet reads the samples another way (compare it with the unprotected browser above).'));
 </script>
 </body>
 </html>

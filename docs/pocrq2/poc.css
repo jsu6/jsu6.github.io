@@ -28,3 +28,5 @@ a { color: var(--fg); }
 .three td { width: 25%; }
 .three .k { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
 .three .v { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+.four .k { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.four .v { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }

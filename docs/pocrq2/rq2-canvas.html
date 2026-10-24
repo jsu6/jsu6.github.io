@@ -22,20 +22,20 @@ A page that turns the canvas into a bitmap and reads it back through WebGL gets 
 
 <h2>How to check</h2>
 <ol>
-<li>In Brave, open this page and turn fingerprinting protection off for the site (Shields panel: turn off
-<i>Block fingerprinting</i>), reload, and click <b>Copy readings</b>.</li>
-<li>Turn fingerprinting protection back to its default (Standard), reload, paste the readings below and click
-<b>Compare</b>.</li>
+<li>Open this page in an unprotected browser on the same machine and click <b>Copy readings</b>: Chromium or
+Chrome, or Brave with fingerprinting protection off for the site (Shields panel: turn off <i>Block
+fingerprinting</i>).</li>
+<li>Open it in Brave with Shields at their default (Standard), paste the readings below and click <b>Compare</b>.</li>
 </ol>
-<p>Expected in Brave Standard: the two protected APIs differ from protection off (farbled), and the WebGL route is
-the same as with protection off. Even without pasting, the line under the table shows half of it: with no
+<p>Expected in Brave Standard: the two protected APIs differ from the unprotected browser (farbled), and the WebGL route is
+the same as in the unprotected browser. Even without pasting, the line under the table shows half of it: with no
 protection, <code>getImageData</code> and the WebGL route return the same bytes; in Brave Standard some bytes differ.</p>
 
 <h2>Readings in this browser</h2>
 <div id="result" class="muted">reading…</div>
 <p><button id="copy" disabled>Copy readings</button></p>
 <textarea id="out" readonly hidden></textarea>
-<textarea id="paste" placeholder="Paste the readings copied with fingerprinting protection off"></textarea>
+<textarea id="paste" placeholder="Paste the readings copied in the unprotected browser"></textarea>
 <p><button class="primary" id="compare">Compare</button></p>
 <p class="muted">Brave 1.92.144, two sites, two sessions each: the WebGL route returned the pixels Brave returns with
 protection off; getImageData and toDataURL were farbled (out/rq2/verify/bypasses/verdicts.csv). Brave's WebGL
@@ -67,7 +67,10 @@ function readToDataURL() {
 function readBitmapThroughWebGL() {
   const o = new OffscreenCanvas(W, H);
   draw(o.getContext('2d'));
-  const bitmap = o.transferToImageBitmap();
+  return pixelsThroughWebGL(o.transferToImageBitmap());
+}
+// ---- helpers --------------------------------------------------------------------------------------------
+function pixelsThroughWebGL(bitmap) {  // a bitmap's pixels: uploaded as a WebGL texture and read back
   const gl = document.createElement('canvas').getContext('webgl2');
   gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
@@ -78,26 +81,30 @@ function readBitmapThroughWebGL() {
   return px;
 }
 // ---------------------------------------------------------------------------------------------------------
+async function pngPixels(dataURL) {  // the pixels of toDataURL's PNG, decoded without a 2D read
+  const blob = await (await fetch(dataURL)).blob();
+  return pixelsThroughWebGL(await createImageBitmap(blob, {colorSpaceConversion: 'none', premultiplyAlpha: 'none'}));
+}
 async function sha(bytes) {  // the first 8 bytes of SHA-256, in hex
   const d = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-showCode($('code'), draw, readGetImageData, readToDataURL, readBitmapThroughWebGL);
+showCode($('code'), draw, readGetImageData, readToDataURL, readBitmapThroughWebGL, pixelsThroughWebGL, pngPixels);
 const BYPASS = 'OffscreenCanvas.transferToImageBitmap → WebGL readPixels';
-poc([
-  {what: 'canvas pixels (SHA-256)', protectedApi: 'CanvasRenderingContext2D.getImageData', bypassApi: BYPASS},
-  {what: 'canvas pixels, PNG-encoded (SHA-256)', protectedApi: 'HTMLCanvasElement.toDataURL', bypassApi: BYPASS},
+poc('The canvas pixels (SHA-256 of the RGBA bytes; for toDataURL, of the pixels its PNG decodes to)', [
+  {api: 'CanvasRenderingContext2D.getImageData', bypass: BYPASS},
+  {api: 'HTMLCanvasElement.toDataURL', bypass: BYPASS},
 ], async () => {
   const a = readGetImageData(), b = readBitmapThroughWebGL();
   let diff = 0;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff++;
   return {'CanvasRenderingContext2D.getImageData': await sha(a),
-          'HTMLCanvasElement.toDataURL': await sha(new TextEncoder().encode(readToDataURL())),
+          'HTMLCanvasElement.toDataURL': await sha(await pngPixels(readToDataURL())),
           [BYPASS]: await sha(b), 'bytes that differ between getImageData and the WebGL route': diff};
 }, (v) => {
   const n = v['bytes that differ between getImageData and the WebGL route'];
   return n === 0 ? 'getImageData and the WebGL route return the same bytes: this browser does not farble getImageData here.'
-    : `getImageData and the WebGL route differ in ${n} bytes: getImageData is farbled, and the WebGL route is not farbled the same way (compare it with protection off above).`;
+    : `getImageData and the WebGL route differ in ${n} bytes: getImageData is farbled, and the WebGL route is not farbled the same way (compare it with the unprotected browser above).`;
 });
 </script>
 </body>

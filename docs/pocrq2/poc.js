@@ -11,28 +11,29 @@ function showCode(el, ...fns) { el.textContent = fns.map((f) => f.toString()).jo
 const fmt = (v) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-// One proof of concept. rows: [{what, protectedApi, bypassApi}]; read(): a promise of {api: value}; selfCheck(values):
-// a sentence that needs no pasted readings. Shows this browser's values; Copy puts them on the clipboard; pasting the
-// values copied with protection off adds the comparison.
-function poc(rows, read, selfCheck) {
+// One proof of concept. what: the information. rows: [{api, bypass}] (a protected API and the API that circumvents
+// it, both returning the same kind of value) or [{api, field}] (an API whose value passes a hook unchanged). read(): a
+// promise of {api: value}; selfCheck(values): a sentence that needs no pasted readings. Once readings from an
+// unprotected browser are pasted: is the protected value changed, and does the circumvention return the true one?
+function poc(what, rows, read, selfCheck) {
   let mine = null;
   const render = (truth) => {
-    const cell = (api, isBypass) => {
-      const v = mine[api];
-      let mark = '';
-      if (truth) {
-        const eq = same(v, truth[api]);
-        mark = isBypass
-          ? `<div class="${eq ? 'bad' : 'muted'}">${eq ? 'same as protection off: leaks' : 'differs: does not leak here'}</div>`
-          : `<div class="${eq ? 'muted' : 'ok'}">${eq ? 'same as protection off: not protected here' : 'differs: protected'}</div>`;
-      }
-      return `<td><div class="k">${api}</div><div class="v">${fmt(v)}</div>${mark}</td>`;
+    const verdict = (r) => {
+      if (!truth) return '';
+      const t = truth[r.api];
+      if (r.field) return same(mine[r.api], t) ? '<span class="bad">same: passes the hook unchanged</span>'
+        : '<span class="muted">differs: changed here</span>';
+      if (same(mine[r.api], t)) return '<span class="muted">same: not protected here</span>';
+      return same(mine[r.bypass], t) ? '<span class="bad">protected, but the circumvention returns the true value: bypassed</span>'
+        : '<span class="ok">protected, and the circumvention differs too: not bypassed here</span>';
     };
-    $('result').innerHTML = '<div class="scroll"><table class="three"><thead><tr><th>information</th>' +
-      (truth ? '<th>protection off (pasted)</th>' : '') + '<th>protected API</th><th>circumventing API</th></tr></thead><tbody>' +
-      rows.map((r) => `<tr><td>${r.what}</td>` +
-        (truth ? `<td><div class="k">${r.bypassApi}</div><div class="v">${fmt(truth[r.bypassApi])}</div></td>` : '') +
-        cell(r.protectedApi, false) + cell(r.bypassApi, true) + '</tr>').join('') + '</tbody></table></div>' +
+    $('result').innerHTML = `<p>${what}</p><div class="scroll"><table class="four"><thead><tr><th>protected API</th>` +
+      (truth ? '<th>unprotected (pasted)</th>' : '') + '<th>this browser</th><th>circumvention in this browser</th>' +
+      (truth ? '<th></th>' : '') + '</tr></thead><tbody>' + rows.map((r) => `<tr><td class="k">${r.api}</td>` +
+        (truth ? `<td class="v">${fmt(truth[r.api])}</td>` : '') + `<td class="v">${fmt(mine[r.api])}</td>` +
+        (r.bypass ? `<td><div class="k">${r.bypass}</div><div class="v">${fmt(mine[r.bypass])}</div></td>`
+          : `<td class="muted">${r.field}</td>`) +
+        (truth ? `<td>${verdict(r)}</td>` : '') + '</tr>').join('') + '</tbody></table></div>' +
       (selfCheck ? `<p class="verdict">${selfCheck(mine)}</p>` : '');
   };
   read().then((values) => {

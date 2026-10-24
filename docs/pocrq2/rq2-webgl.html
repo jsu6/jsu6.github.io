@@ -22,19 +22,19 @@ page reads. The same call returns the true GPU and driver name.</p>
 
 <h2>How to check</h2>
 <ol>
-<li>In Brave, open this page and turn fingerprinting protection off for the site (Shields panel: turn off
-<i>Block fingerprinting</i>), reload, and click <b>Copy readings</b>.</li>
-<li>Turn fingerprinting protection back to its default (Standard), reload, paste the readings below and click
-<b>Compare</b>.</li>
+<li>Open this page in an unprotected browser on the same machine and click <b>Copy readings</b>: Chromium or
+Chrome, or Brave with fingerprinting protection off for the site (Shields panel: turn off <i>Block
+fingerprinting</i>).</li>
+<li>Open it in Brave with Shields at their default (Standard), paste the readings below and click <b>Compare</b>.</li>
 </ol>
-<p>Expected in Brave Standard: the limits differ from protection off (a few lowered by one), and the renderer and
-vendor strings are the same as with protection off.</p>
+<p>Expected in Brave Standard: the limits differ from the unprotected browser (a few lowered by one), and the renderer and
+vendor strings are the same as in the unprotected browser.</p>
 
 <h2>Readings in this browser</h2>
 <div id="result" class="muted">reading…</div>
 <p><button id="copy" disabled>Copy readings</button></p>
 <textarea id="out" readonly hidden></textarea>
-<textarea id="paste" placeholder="Paste the readings copied with fingerprinting protection off"></textarea>
+<textarea id="paste" placeholder="Paste the readings copied in the unprotected browser"></textarea>
 <p><button class="primary" id="compare">Compare</button></p>
 <p class="muted">Brave 1.92.144, two sites, two sessions each: the renderer string equalled the value with protection off;
 the limits were lowered (out/rq2/verify/bypasses/verdicts.csv).</p>
@@ -56,8 +56,9 @@ function readRenderer() {
 }
 // ---------------------------------------------------------------------------------------------------------
 showCode($('code'), readLimits, readRenderer);
-poc([
-  {what: 'the GPU', protectedApi: 'getParameter(MAX_* limits)', bypassApi: 'getParameter(UNMASKED_VENDOR, UNMASKED_RENDERER)'},
+poc('The GPU, read with one getParameter call that Brave hooks', [
+  {api: 'getParameter(MAX_* limits)', field: 'the field Brave changes'},
+  {api: 'getParameter(UNMASKED_VENDOR, UNMASKED_RENDERER)', field: 'another field of the same hooked call'},
 ], async () => ({'getParameter(MAX_* limits)': readLimits(), 'getParameter(UNMASKED_VENDOR, UNMASKED_RENDERER)': readRenderer()}));
 </script>
 </body>
