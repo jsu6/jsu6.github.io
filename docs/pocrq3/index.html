@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Discovered APIs Check</title>
+<link rel="stylesheet" href="poc.css">
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>RQ3 PoC: the APIs the slice ranking found that change with the device</h1>
+<p class="muted">Of the slice model's top 100 APIs, 84 are used by no prior work. Five of them changed with one
+configuration setting on our test machine and were stable on reload; seven more did once the Screen details
+(window-management) permission was granted. One of 100 random controls changed. This page reads the twelve the way
+a page would. Nothing leaves this page.</p>
+
+<div class="step">
+<h2>How to test</h2>
+<ol>
+<li>Click <b>Read</b> (and, in Chrome or Edge on a desktop, <b>Read with permission</b>, then allow Screen details).
+Click <b>Copy readings</b> and keep the text.</li>
+<li>Reload, read again, paste the first readings and click <b>Compare</b>: on the same device and browser every value
+should be the same (stable).</li>
+<li>Read on another device or browser, paste and compare: a value that differs separates the two.</li>
+</ol>
+</div>
+
+<h2>The code this page runs</h2>
+<pre class="code" id="code"></pre>
+<p><button class="primary" id="read">Read (one click: audio needs it)</button>
+<button id="readperm">Read with permission (7 more)</button>
+<button id="copy">Copy readings</button></p>
+<div id="mine"></div>
+<h2>Readings from another visit, device or browser</h2>
+<textarea id="paste" placeholder="Paste readings copied from another visit"></textarea>
+<button id="compare">Compare</button>
+<div id="cmp"></div>
+<div class="verdict" id="verdict" hidden></div>
+<textarea id="out" readonly hidden></textarea>
+<p class="muted">RQ2's pages are at <a href="../pocrq2/">pocrq2</a>.</p>
+</div>
+<script src="poc.js"></script>
+<script>
+'use strict';
+// ---- no permission: one function per API (the setting that moved it on our machine) --------------------
+function viewportSegments() {                        // Viewport.segments (window size)
+  if (!window.viewport) return 'window.viewport not exposed in this browser';
+  return window.viewport.segments.map((r) => [r.x, r.y, r.width, r.height]);
+}
+function scrollIntoViewIfNeeded() {                  // Element.scrollIntoViewIfNeeded (fonts, language, DPR, window)
+  const box = document.createElement('div');         // a small scroller of wrapping text with a target inside
+  box.style.cssText = 'width:150px;height:60px;overflow:auto;font:16px sans-serif';
+  box.textContent = 'The quick brown fox jumps over the lazy dog. '.repeat(12);
+  const target = box.appendChild(document.createElement('span'));
+  target.textContent = 'target';
+  document.body.appendChild(box);
+  target.scrollIntoViewIfNeeded(true);               // scrolls by where the text layout put the target
+  const v = [box.scrollTop, box.scrollLeft];
+  box.remove();
+  return v;
+}
+async function audioWorkletSampleRate() {            // AudioWorkletGlobalScope.sampleRate (sample rate)
+  const ctx = new AudioContext();
+  await ctx.audioWorklet.addModule('rq3-worklet.js');
+  const node = new AudioWorkletNode(ctx, 'fproot-rate');
+  const rate = await new Promise((res) => { node.port.onmessage = (m) => res(m.data); });
+  await ctx.close();
+  return rate;
+}
+function svgCharNumAtPosition() {                    // SVGTextContentElement.getCharNumAtPosition (fonts, language)
+  const host = document.createElement('div');
+  host.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="40"><text x="1" y="20" style="font:16px sans-serif">abcdefghij</text></svg>';
+  document.body.appendChild(host);
+  const text = host.querySelector('text');
+  const out = [5, 15, 25, 35, 45, 55, 65, 75].map((x) => text.getCharNumAtPosition(new DOMPoint(x, 15)));
+  host.remove();
+  return out;
+}
+async function iirFrequencyResponse() {               // IIRFilterNode.getFrequencyResponse (sample rate)
+  const ctx = new AudioContext();
+  const filter = ctx.createIIRFilter([0.1, 0.2, 0.1], [1, -0.6, 0.2]);
+  const hz = new Float32Array([50, 440, 1000, 5000, 15000]);
+  const mag = new Float32Array(5), phase = new Float32Array(5);
+  filter.getFrequencyResponse(hz, mag, phase);
+  await ctx.close();
+  return Array.from(mag, (x) => +x.toFixed(6));
+}
+// ---- with the window-management permission: one call, seven values -------------------------------------
+async function screenDetailsReadings() {             // ScreenDetails.screens and six ScreenDetailed attributes
+  const details = await window.getScreenDetails();   // asks for the Screen details permission
+  const s = details.currentScreen;
+  return {
+    'ScreenDetails.screens': details.screens.map((x) => [x.width, x.height, x.devicePixelRatio, x.colorDepth, x.label]),
+    'ScreenDetailed.redPrimaryX': s.redPrimaryX, 'ScreenDetailed.redPrimaryY': s.redPrimaryY,          // the six colour
+    'ScreenDetailed.greenPrimaryX': s.greenPrimaryX, 'ScreenDetailed.greenPrimaryY': s.greenPrimaryY,  // attributes are
+    'ScreenDetailed.bluePrimaryX': s.bluePrimaryX, 'ScreenDetailed.bluePrimaryY': s.bluePrimaryY,      // behind a flag
+  };                                                 // (undefined in stock Chrome)
+}
+// ----------------------------------------------------------------------------------------------------
+const PROBES = {'Viewport.segments': viewportSegments, 'Element.scrollIntoViewIfNeeded': scrollIntoViewIfNeeded,
+  'AudioWorkletGlobalScope.sampleRate': audioWorkletSampleRate,
+  'SVGTextContentElement.getCharNumAtPosition': svgCharNumAtPosition,
+  'IIRFilterNode.getFrequencyResponse': iirFrequencyResponse};
+showCode($('code'), ...Object.values(PROBES), screenDetailsReadings);
+
+const show = () => renderTable($('mine'), Object.entries(MINE).map(([api, v]) => ({api, mine: v})), '', `this visit (${browserName()})`);
+async function readAll() {
+  for (const [api, f] of Object.entries(PROBES)) {
+    try { setReading(api, await f()); } catch (e) { setReading(api, 'error: ' + (e && e.name)); }
+  }
+  show();
+  await report({readings: MINE});
+}
+async function readWithPermission() {
+  try {
+    if (!window.getScreenDetails) throw Object.assign(new Error('getScreenDetails is not exposed'), {name: 'NotExposed'});
+    for (const [api, v] of Object.entries(await screenDetailsReadings())) setReading(api, v === undefined ? 'undefined' : v);
+  } catch (e) {
+    setReading('ScreenDetails.screens', 'error: ' + (e && e.name));
+  }
+  show();
+}
+$('read').addEventListener('click', readAll);
+// Local verification (?report=1): a trusted click anywhere reads the APIs.
+if (Q.get('report') === '1') {
+  addEventListener('click', (e) => { if (e.target.id !== 'read') readAll(); }, {once: true});
+  report({ready: true, run: (Q.get('run') || 'none') + '.ready.0'});
+}
+$('readperm').addEventListener('click', readWithPermission);
+$('copy').addEventListener('click', () => { $('out').hidden = false; copyReadings($('out')); });
+$('compare').addEventListener('click', () => {
+  let gt;
+  try { gt = parsePasted($('paste').value); } catch (e) { $('cmp').textContent = 'Cannot read the pasted text: ' + e.message; return; }
+  const apis = [...new Set([...Object.keys(gt.readings), ...Object.keys(MINE)])];
+  const rows = apis.map((api) => ({api, gt: gt.readings[api], mine: MINE[api],
+    same: JSON.stringify(gt.readings[api]) === JSON.stringify(MINE[api])}));
+  renderTable($('cmp'), rows, `${gt.browser} (pasted)`, browserName());
+  const both = rows.filter((r) => r.gt !== undefined && r.mine !== undefined);
+  const v = $('verdict');
+  v.hidden = false;
+  v.textContent = `${both.filter((r) => !r.same).length} of ${both.length} APIs read in both visits differ. Same device ` +
+    'and browser: expect 0. Different device or browser: each differing API separates the two.';
+});
+</script>
+</body>
+</html>

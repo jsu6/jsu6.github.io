@@ -11,9 +11,10 @@
 <div class="page">
 <div class="mark"></div>
 <h1>RQ2 PoC: readers Brave leaves unprotected (no click needed)</h1>
-<p class="muted">Brave's audio and screen defenses hook some readers of the audio device and the display. Other readers
-of the same information pass no hook. The page compares the unprotected readers with a protected sibling,
-<code>navigator.hardwareConcurrency</code>, which Brave farbles per site.</p>
+<p class="muted">Brave's audio, screen and WebGL defenses hook some readers of the audio device, the display and the
+GPU. Other readers of the same information pass no hook, or pass a hook that leaves their value as it is. The page
+compares them with protected siblings: <code>navigator.hardwareConcurrency</code>, which Brave farbles per site, and
+a WebGL limit that the same <code>getParameter</code> hook lowers.</p>
 
 <h2>The code this page runs</h2>
 <pre class="code" id="code"></pre>
@@ -21,8 +22,9 @@ of the same information pass no hook. The page compares the unprotected readers 
 <div class="step">
 <h2>Step 1 — Chromium or Chrome: copy the readings</h2>
 <h2>Step 2 — Brave (Shields default): paste them and compare</h2>
-<p>Expected in Brave Standard: <code>devicePixelRatio</code>, <code>sampleRate</code> and <code>baseLatency</code> are the
-same as in Chromium, and <code>hardwareConcurrency</code> differs (it is farbled).</p>
+<p>Expected in Brave Standard: <code>devicePixelRatio</code>, <code>sampleRate</code>, <code>baseLatency</code> and the
+WebGL renderer string are the same as in Chromium on the same machine, while <code>hardwareConcurrency</code> and the
+WebGL limits differ (farbled, and a few limits lowered by one on each site).</p>
 </div>
 <p><button id="copy">Copy readings</button></p>
 <div id="mine"></div>
@@ -44,10 +46,22 @@ function readUnprotected() {
     'AudioContext.baseLatency': audio.baseLatency,      // follows the device's buffer size
   };
   audio.close();
+  const gl = document.createElement('canvas').getContext('webgl2');
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  values['WebGL renderer (getParameter)'] = gl.getParameter(info.UNMASKED_RENDERER_WEBGL);  // the GPU and driver
   return values;
 }
+// The limits Brave lowers by one, a different few on each site; any one may come through unchanged, so read them all.
+const LIMITS = ['MAX_VERTEX_UNIFORM_BLOCKS', 'MAX_FRAGMENT_UNIFORM_BLOCKS', 'MAX_COMBINED_UNIFORM_BLOCKS',
+  'MAX_UNIFORM_BUFFER_BINDINGS', 'MAX_VERTEX_UNIFORM_COMPONENTS', 'MAX_FRAGMENT_UNIFORM_COMPONENTS',
+  'MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS', 'MAX_VERTEX_OUTPUT_COMPONENTS', 'MAX_FRAGMENT_INPUT_COMPONENTS',
+  'MAX_VARYING_COMPONENTS', 'MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS'];
 function readProtectedSibling() {
-  return {'Navigator.hardwareConcurrency': navigator.hardwareConcurrency};  // Brave farbles this per site
+  const gl = document.createElement('canvas').getContext('webgl2');
+  return {
+    'Navigator.hardwareConcurrency': navigator.hardwareConcurrency,                    // farbled per site
+    'WebGL MAX_* limits (getParameter)': LIMITS.map((n) => gl.getParameter(gl[n])),    // lowered per site
+  };
 }
 // ------------------------------------------------------------------------------------------------
 showCode($('code'), readUnprotected, readProtectedSibling);
@@ -60,7 +74,7 @@ $('compare').addEventListener('click', () => {
   let gt;
   try { gt = parsePasted($('paste').value); } catch (e) { $('cmp').textContent = 'Cannot read the pasted text: ' + e.message; return; }
   renderTable($('cmp'), Object.keys(MINE).map((api) => ({api, gt: gt.readings[api], mine: MINE[api],
-    same: gt.readings[api] === MINE[api], note: PROTECTED.has(api) ? 'protected sibling' : 'not protected'})),
+    same: JSON.stringify(gt.readings[api]) === JSON.stringify(MINE[api]), note: PROTECTED.has(api) ? 'protected sibling' : 'not protected'})),
   `${gt.browser} (ground truth)`, browserName());
 });
 </script>

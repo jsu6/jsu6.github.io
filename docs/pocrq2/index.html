@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Brave Defense Bypasses</title>
+<link rel="stylesheet" href="poc.css">
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>RQ2 proofs of concept: defenses that protect APIs, not information</h1>
+<p class="muted">Minimal pages behind RQ2 of the paper <i>Slicing to the Roots</i>. Each page prints the exact code it
+runs and only shows values on the page; nothing is sent anywhere. Open a page in Chromium or Chrome first, copy the
+readings, then open it in Brave (Shields at their default) on the same machine and paste them to compare.</p>
+<ul>
+<li><a href="rq2-fullscreen.html">Fullscreen screen bypass</a>: Brave rewrites screen.width, but in fullscreen
+visualViewport.width is the true screen width. Needs one click.</li>
+<li><a href="rq2-no-gesture.html">Unprotected readers</a>: devicePixelRatio, the audio sample rate and base latency
+and the WebGL renderer string are the same as in Chromium, while hardwareConcurrency and the WebGL limits read through
+the same getParameter call are farbled.</li>
+<li><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a>: getImageData is farbled, but the same canvas read
+through WebGL readPixels is not.</li>
+</ul>
+<p class="muted">RQ3's page is at <a href="../pocrq3/">pocrq3</a>.</p>
+</div>
+</body>
+</html>
