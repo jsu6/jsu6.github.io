@@ -10,71 +10,50 @@
 <body>
 <div class="page">
 <div class="mark"></div>
-<h1>RQ2 proofs of concept: defenses protect APIs, not information</h1>
-<p class="muted">Pages behind RQ2 of the paper <i>Slicing to the Roots</i>. Each page prints the code it runs and only
-shows values on the page; nothing is sent anywhere. No page asks for a permission.</p>
+<h1>RQ2 proofs of concept: defenses that protect APIs, not information</h1>
+<p class="muted">Minimal pages behind RQ2 of the paper <i>Slicing to the Roots</i>. Each page prints the exact code it
+runs and only shows values on the page; nothing is sent anywhere, and no page asks for a permission.</p>
 
 <h2>What we found</h2>
-<p>We seeded the static analysis with the 305 APIs Chromium marks <code>[HighEntropy]</code>. It found
-<b data-n="readers"></b> of them reading information a Brave defense protects. At Brave's default level (Standard), a
-hook sits on the path of <b data-n="protected"></b>. The other <b data-n="circumvent"></b> reach the same information
-without passing a hook that acts at Standard, so we predict they circumvent it. In Brave 1.92.144 (two sessions, two
-sites each):</p>
-<div class="scroll"><table id="outcomes"></table></div>
+<p>Seeded with the 305 APIs Chromium marks <code>[HighEntropy]</code>, our analysis finds <b>233</b> APIs that read
+information a Brave defense protects. At Brave's default level (Standard), a hook sits on the path of <b>7</b>. The
+other <b>226</b> reach the same information without passing a hook that acts at Standard, so they circumvent the
+defense. In Brave 1.92.144 (two sites, two sessions each), of the 226:</p>
+<ul>
+<li><b>92</b> returned exactly the value Brave returns with fingerprinting protection off;</li>
+<li><b>49</b> leaked through one read-back route: canvas drawing calls, farbled through <code>getImageData</code> but
+not through WebGL;</li>
+<li><b>36</b> were rewritten after all, <b>46</b> could not be checked by a page, and <b>3</b> are indistinguishable on
+our machine (the protected value equals the true one).</li>
+</ul>
 
 <h2>The pages</h2>
-<p>How to use a page: open it in Chromium or Chrome (the ground truth) and copy the readings. Then open it in Brave
-on the same machine, with Shields at their default, and paste them to compare. The every-reader page instead takes
-its ground truth from Brave with fingerprinting protection off, as our lab did.</p>
+<p>One circumvention each, for three of Brave's defenses. Every page compares a protected API with an API that
+circumvents it, against the readings of the same page with Brave's fingerprinting protection off.</p>
 <div class="scroll"><table>
-<thead><tr><th>page</th><th>what it shows</th><th>you do</th></tr></thead>
+<thead><tr><th>page</th><th>protected API (Brave farbles it)</th><th>circumventing API (true value)</th></tr></thead>
 <tbody>
-<tr><td><a href="rq2-no-gesture.html">Unprotected readers</a></td><td>devicePixelRatio, the audio sample rate and
-base latency, and the WebGL renderer string read the same as in Chromium. Their protected siblings differ:
-hardwareConcurrency, the WebGL limits from the same <code>getParameter</code> call, and the analyser output.</td><td>nothing</td></tr>
-<tr><td><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a></td><td><code>getImageData</code> is
-farbled, but the same canvas read through WebGL <code>readPixels</code> is not: the <i>partly</i> rows below.</td><td>nothing</td></tr>
-<tr><td><a href="rq2-fullscreen.html">Fullscreen screen width</a></td><td>Brave rewrites <code>screen.width</code>,
-but in fullscreen <code>visualViewport.width</code> is the true screen width.</td><td>one click (fullscreen)</td></tr>
-<tr><td><a href="rq2-all.html">Every circumventing reader</a></td><td>The lab's probe for the <b data-n="poc"></b>
-predicted circumventions a page reads without a permission, run in Brave with protection off and then at Standard.
-Each value is shown next to what our lab saw, to check row by row.</td><td>toggle Shields; move the mouse and scroll once</td></tr>
+<tr><td><a href="rq2-canvas.html">Canvas</a></td><td><code>getImageData</code>, <code>toDataURL</code></td>
+<td><code>OffscreenCanvas.transferToImageBitmap</code>, read back through WebGL</td></tr>
+<tr><td><a href="rq2-audio.html">Audio</a></td><td><code>AudioBuffer.getChannelData</code></td>
+<td><code>OfflineAudioContext.startRendering</code>, samples read by an AudioWorklet</td></tr>
+<tr><td><a href="rq2-webgl.html">WebGL</a></td><td><code>getParameter</code>: the <code>MAX_*</code> limits</td>
+<td><code>getParameter</code>: the GPU vendor and renderer strings</td></tr>
 </tbody></table></div>
-<p class="muted" id="leftout"></p>
 
-<h2>Per defense</h2>
-<p class="muted">An API often reads information that several defenses protect, so the rows overlap. The 305 seeds use
-the full run's slices, and half of those slices are truncated. Readers: seed APIs that read the defense's information. Protected: a hook acts on
-their path at Standard. Circumvent: predicted to bypass every hook at Standard, broken down by what Brave returned.
-PoC: of those, the ones on the <a href="rq2-all.html">every-reader page</a>.</p>
-<div class="scroll"><table id="defenses"></table></div>
+<h2>The three defenses in numbers</h2>
+<p class="muted">Seed APIs whose slice reaches information the defense protects. An API often reaches several
+defenses' information, so it is counted under each, and the rows overlap.</p>
+<div class="scroll"><table>
+<thead><tr><th>defense</th><th>readers</th><th>protected at Standard</th><th>circumvent</th><th>leaked</th>
+<th>leaked through WebGL only</th><th>rewritten</th><th>can't check</th><th>indistinguishable</th></tr></thead>
+<tbody>
+<tr><td>canvas read-back farbling</td><td>204</td><td>3</td><td>201</td><td>87</td><td>49</td><td>21</td><td>42</td><td>2</td></tr>
+<tr><td>Web Audio farbling</td><td>201</td><td>2</td><td>199</td><td>87</td><td>49</td><td>22</td><td>39</td><td>2</td></tr>
+<tr><td>WebGL parameter and read-back farbling</td><td>207</td><td>0</td><td>207</td><td>90</td><td>49</td><td>26</td><td>40</td><td>2</td></tr>
+</tbody></table></div>
 <p class="muted">Numbers: out/rq2/predictions.jsonl (the static grade) and out/rq2/verify/bypasses/verdicts.csv (the
-Brave 1.92.144 observation), written to <a href="counts.js">counts.js</a> by analysis/rq2/poc_page.py. RQ3's page is
-at <a href="../pocrq3/">pocrq3</a>.</p>
+Brave 1.92.144 observation). RQ3's page is at <a href="../pocrq3/">pocrq3</a>.</p>
 </div>
-<script src="counts.js"></script>
-<script>
-'use strict';
-const A = COUNTS.apis;
-const OUT = [['leaked', 'returned exactly the value Brave returns with fingerprinting protection off'],
-  ['partly', 'canvas drawing calls: farbled through getImageData, unchanged through WebGL'],
-  ['rewritten', 'rewritten after all: the prediction missed a hook'],
-  ["can't check", 'not readable here: paint worklets, hardware, permission prompts'],
-  ['indistinguishable', 'the protected value equals the true one on our test machine']];
-document.querySelectorAll('[data-n]').forEach((e) => { e.textContent = A[e.dataset.n]; });
-document.getElementById('outcomes').innerHTML = '<thead><tr><th>outcome</th><th>APIs</th><th></th></tr></thead><tbody>' +
-  OUT.map(([o, why]) => `<tr><td><span class="tag ${o.replace(/\W/g, '')}">${o}</span></td><td>${A.outcomes[o] || 0}</td>` +
-    `<td class="muted">${why}</td></tr>`).join('') +
-  `<tr><td><b>predicted to circumvent</b></td><td><b>${A.circumvent}</b></td><td></td></tr></tbody>`;
-document.getElementById('leftout').textContent = `Of the ${A.circumvent}, the every-reader page leaves out ` +
-  `${A.left_out.permission} that need a permission or a browser prompt (camera and microphone, window management, ` +
-  `Bluetooth, background fetch, WebAuthn) and ${A.left_out['cannot read']} a page cannot read here (paint worklets, ` +
-  'a gamepad, a touch screen).';
-const COLS = ['leaked', 'partly', 'rewritten', "can't check", 'indistinguishable'];
-document.getElementById('defenses').innerHTML = '<thead><tr><th>defense</th><th>readers</th><th>protected</th>' +
-  '<th>circumvent</th>' + COLS.map((c) => `<th>${c}</th>`).join('') + '<th>PoC</th></tr></thead><tbody>' +
-  COUNTS.defenses.map((d) => `<tr><td>${d.name}</td><td>${d.readers}</td><td>${d.protected}</td><td>${d.circumvent}</td>` +
-    COLS.map((c) => `<td>${d.outcomes[c] || ''}</td>`).join('') + `<td>${d.poc || ''}</td></tr>`).join('') + '</tbody>';
-</script>
 </body>
 </html>
