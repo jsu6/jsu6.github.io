@@ -67,8 +67,11 @@ async function readAudioDevice() {
 }
 
 // ------------------------------------------------------------------ screen
-// hooked: Brave replaces the screen size with a common desktop size
-function readScreenWidth() { return `${screen.width} × ${screen.height}`; }
+// hooked: Brave replaces the screen size, and the available size with it, by the smallest common desktop size at
+// least as large as the window
+function readScreenWidth() {
+  return `${screen.width} × ${screen.height}, available ${screen.availWidth} × ${screen.availHeight}`;
+}
 // routes: other fields of the same screen information
 function readScreenRoutes() {
   return {devicePixelRatio: window.devicePixelRatio, orientation: screen.orientation.type, colorDepth: screen.colorDepth};
@@ -85,22 +88,22 @@ const CHROMIUM = 'https://source.chromium.org/chromium/chromium/src/+/refs/tags/
 const ROWS = [
   {key: 'canvas1', info: 'Canvas pixels (SHA-256)', hooked: 'CanvasRenderingContext2D.getImageData',
    route: 'OffscreenCanvas.transferToImageBitmap → WebGL readPixels', demo: 'canvas',
-   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'mapping->GetSkPixmapForPlane(…): the canvas pixels mapped back from GPU memory']},
+   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'mapping->GetSkPixmapForPlane(…): the canvas pixels mapped back from GPU memory', 'ground-truth slices; in the 305-API slices both stop one step earlier, at the image copied from these pixels']},
   {key: 'canvas2', info: 'Canvas pixels (SHA-256)', hooked: 'HTMLCanvasElement.toDataURL',
    route: 'OffscreenCanvas.transferToImageBitmap → WebGL readPixels', demo: 'canvas',
-   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'the same source']},
+   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'the same source', 'ground-truth slices; in the 305-API slices both stop one step earlier, at the image copied from these pixels']},
   {key: 'audio1', info: 'Audio output device', hooked: 'AudioBuffer.getChannelData (sum)', route: 'BaseAudioContext.sampleRate',
-   demo: 'audio', source: ['media/base/audio_parameters.cc', 227, 'AudioParameters: sample_rate']},
+   demo: 'audio', source: ['media/base/audio_parameters.cc', 227, 'AudioParameters: sample_rate', 'ground-truth slices; in the 305-API slices both paths pass through it and continue upstream']},
   {key: 'audio2', info: 'Audio output device', hooked: 'AudioBuffer.getChannelData (sum)', route: 'AudioContext.baseLatency',
-   demo: 'audio', source: ['media/base/audio_parameters.cc', 228, 'AudioParameters: frames_per_buffer']},
-  {key: 'screen1', info: 'Screen', hooked: 'Screen.width × height', route: 'Window.devicePixelRatio', demo: 'screen',
-   source: ['ui/display/mojom/screen_info_mojom_traits.cc', 21, 'ScreenInfo read from the browser: device_scale_factor']},
-  {key: 'screen2', info: 'Screen', hooked: 'Screen.width × height', route: 'ScreenOrientation.type', demo: 'screen',
-   source: ['ui/display/mojom/screen_info_mojom_traits.cc', 15, 'ScreenInfo read from the browser: rect']},
-  {key: 'screen3', info: 'Screen', hooked: 'Screen.width × height', route: 'Screen.colorDepth', demo: 'screen',
-   source: ['ui/display/mojom/screen_infos_mojom_traits.cc', 15, 'ScreenInfos read from the browser']},
+   demo: 'audio', source: ['media/base/audio_parameters.cc', 228, 'AudioParameters: frames_per_buffer', 'ground-truth slices; in the 305-API slices both paths pass through it and continue upstream']},
+  {key: 'screen1', info: 'Screen', hooked: 'Screen.width × height, availWidth × availHeight', route: 'Window.devicePixelRatio', demo: 'screen',
+   source: ['ui/display/mojom/screen_info_mojom_traits.cc', 21, 'ScreenInfo read from the browser: device_scale_factor', 'ground-truth and 305-API slices']},
+  {key: 'screen2', info: 'Screen', hooked: 'Screen.width × height, availWidth × availHeight', route: 'ScreenOrientation.type', demo: 'screen',
+   source: ['ui/display/mojom/screen_info_mojom_traits.cc', 15, 'ScreenInfo read from the browser: rect', 'ground-truth and 305-API slices']},
+  {key: 'screen3', info: 'Screen', hooked: 'Screen.width × height, availWidth × availHeight', route: 'Screen.colorDepth', demo: 'screen',
+   source: ['ui/display/mojom/screen_infos_mojom_traits.cc', 15, 'ScreenInfos read from the browser', 'ground-truth and 305-API slices']},
   {key: 'plugins', info: 'Plugins', hooked: 'Navigator.plugins (names)', route: 'Navigator.pdfViewerEnabled', demo: 'plugins',
-   source: ['third_party/blink/renderer/core/page/plugin_data.cc', 102, 'registry->GetPlugins(&plugins): the plugin list']},
+   source: ['third_party/blink/renderer/core/page/plugin_data.cc', 102, 'registry->GetPlugins(&plugins): the plugin list', 'ground-truth and 305-API slices']},
 ];
 
 async function sha(bytes) {  // the first 8 bytes of SHA-256, in hex
@@ -132,24 +135,29 @@ const fmt = (v) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.s
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-function values(api, key, part) {
-  const cell = (who, v) => `<div class="cell"><span class="who">${who}</span><span class="v">${esc(fmt(v))}</span></div>`;
-  return `<div class="k">${api}</div>` + (THEIRS ? cell('Chromium', THEIRS[key][part]) : '') +
-    (MINE ? cell(THEIRS ? 'here' : 'this browser', MINE[key][part]) : '');
-}
 function verdict(key) {
   if (!MINE) return '<span class="muted">press Run</span>';
   if (!THEIRS) return '<span class="muted">paste Chromium\'s results</span>';
   const changed = !same(MINE[key].hooked, THEIRS[key].hooked), leaks = same(MINE[key].route, THEIRS[key].route);
   if (changed && leaks) return '<span class="yes">yes</span><div class="why">the hook changes the hooked API; the route returns Chromium\'s value</div>';
-  if (!changed) return '<span class="wait">no hook here</span><div class="why">the hooked API returns Chromium\'s value in this browser</div>';
+  if (!changed) return '<span class="wait">not hooked here</span><div class="why">the hooked API returns Chromium\'s value in this browser</div>';
   return '<span class="no">no</span><div class="why">the route differs from Chromium\'s here</div>';
 }
+// Columns: Chromium's values (the ground truth, pasted), this browser's hooked API, this browser's route.
 function render() {
-  $('board').innerHTML = ROWS.map((r) => `<tr><td>${r.info}<div><a href="#${r.demo}">how</a></div></td>` +
-    `<td class="hooked">${values(r.hooked, r.key, 'hooked')}</td><td class="route">${values(r.route, r.key, 'route')}</td>` +
-    `<td>${verdict(r.key)}</td><td class="src"><a href="${CHROMIUM}${r.source[0]};l=${r.source[1]}">` +
-    `${r.source[0].split('/').pop()}:${r.source[1]}</a><div class="why">${esc(r.source[2])}</div></td></tr>`).join('');
+  const v = (x) => `<div class="v">${esc(fmt(x))}</div>`;
+  const api = (name) => `<div class="k">${name}</div>`;
+  $('board').innerHTML = ROWS.map((r) => {
+    const gt = THEIRS ? THEIRS[r.key] : null, me = MINE ? MINE[r.key] : null;
+    const mark = (ok, yes, no) => (gt && me ? `<div class="${ok ? 'ok' : 'muted'}">${ok ? yes : no}</div>` : '');
+    const truth = gt ? api(r.hooked) + v(gt.hooked) + api(r.route) + v(gt.route) : '<span class="muted">paste Chromium\'s results</span>';
+    const hooked = me ? api(r.hooked) + v(me.hooked) + mark(gt && !same(me.hooked, gt.hooked), 'differs from Chromium: hooked', 'same as Chromium') : '';
+    const route = me ? api(r.route) + v(me.route) + mark(gt && same(me.route, gt.route), 'same as Chromium: leaks', 'differs from Chromium') : '';
+    return `<tr><td>${r.info}<div><a href="#${r.demo}">how</a></div></td><td>${truth}</td>` +
+      `<td class="hooked">${hooked}</td><td class="route">${route}</td><td>${verdict(r.key)}</td>` +
+      `<td class="src"><a href="${CHROMIUM}${r.source[0]};l=${r.source[1]}">${r.source[0].split('/').pop()}:${r.source[1]}</a>` +
+      `<div class="why">${esc(r.source[2])}</div><div class="why"><i>in: ${esc(r.source[3])}</i></div></td></tr>`;
+  }).join('');
 }
 
 function showCode(id, ...fns) { $(id).textContent = fns.map((f) => f.toString()).join('\n\n'); }

@@ -42,8 +42,8 @@ when you copy and paste them. Hooks as in Brave 1.92.144 (brave-core aeb45b6b); 
 
 <h2>How to check</h2>
 <ol class="steps">
-<li><b>In both browsers</b> (Brave with Shields at their default, and Chromium or Chrome, on the same machine), press
-<b>Run</b>.<br><button id="run" class="primary">Run</button> <span id="run-status" class="muted"></span></li>
+<li><b>In both browsers</b> (Brave with Shields at their default, and Chromium or Chrome, on the same machine and
+display, with windows smaller than the screen and page zoom at 100%), press <b>Run</b>.<br><button id="run" class="primary">Run</button> <span id="run-status" class="muted"></span></li>
 <li><b>In Chromium</b>, press <b>Copy results</b>.<br><button id="copy" disabled>Copy results</button>
 <textarea id="mine" rows="2" readonly></textarea></li>
 <li><b>In Brave</b>, paste them and press <b>Compare</b>.
@@ -56,8 +56,8 @@ hook missed it). The last column is the source both slices end at.</div>
 
 <h2>Results</h2>
 <div class="scroll"><table>
-<thead><tr><th>information</th><th class="hooked">hooked API</th><th class="route">route around the hook</th>
-<th>bypass works?</th><th>shared slice end (Chromium)</th></tr></thead>
+<thead><tr><th>information</th><th>Chromium (ground truth)</th><th class="hooked">this browser: hooked API</th>
+<th class="route">this browser: route around the hook</th><th>bypass works?</th><th>shared slice end (Chromium)</th></tr></thead>
 <tbody id="board"></tbody>
 </table></div>
 
@@ -66,21 +66,26 @@ hook missed it). The last column is the source both slices end at.</div>
 <p><b>Hook:</b> Brave adds per-site noise to the pixels in <code>getImageDataInternal</code> and in
 <code>ToDataURLInternal</code>, before it encodes the image. <b>Route:</b> <code>transferToImageBitmap</code> turns
 the same canvas into an <code>ImageBitmap</code> without passing either hook, and WebGL reads it back
-(<code>texImage2D</code>, <code>readPixels</code>); Brave's WebGL read-back hook acts only at Strict. All three slices
-end at the canvas pixels mapped back from GPU memory (the paper's motivating example). Every value is a hash of
+(<code>texImage2D</code>, <code>readPixels</code>); Brave's WebGL read-back hook acts only at Strict. In the ground-truth slices all three end at the canvas pixels mapped back from GPU memory (the paper's
+motivating example); in the automatic slices of the 305-API run all three stop one step earlier, at the image copied
+from those pixels, recorded as a Skia library boundary rather than a source. Every value is a hash of
 raw pixels; toDataURL's PNG is decoded without a 2D read, so the noise Brave put in it survives.</p>
 <pre class="code" id="code-canvas"></pre></details>
 <details class="demo" id="audio"><summary>Audio output device</summary>
 <p><b>Hook:</b> Brave adds per-site noise to the samples <code>AudioBuffer.getChannelData</code> returns.
-<b>Routes:</b> <code>sampleRate</code> and <code>baseLatency</code> of an <code>AudioContext</code>. Their slices and
-<code>getChannelData</code>'s end at the same source, the output device's <code>AudioParameters</code> (its sample rate
-and buffer size), and neither passes a Brave hook.</p>
+<b>Routes:</b> <code>sampleRate</code> and <code>baseLatency</code> of an <code>AudioContext</code>. In the ground-truth slices
+theirs and <code>getChannelData</code>'s end at the same source, the output device's <code>AudioParameters</code> (its
+sample rate and buffer size), and neither route passes a Brave hook. In the 305-API run's slices all three paths pass
+through the same <code>AudioParameters</code> node and continue upstream from it.</p>
 <pre class="code" id="code-audio"></pre></details>
 <details class="demo" id="screen"><summary>Screen</summary>
 <p><b>Hook:</b> Brave hands <code>Screen</code> a copy of the screen information with the size replaced by a common
 desktop size. <b>Routes:</b> <code>devicePixelRatio</code> and <code>screen.orientation</code> read the same screen
 information (the <code>ScreenInfo</code> the browser sends the renderer) without that hook;
-<code>screen.colorDepth</code> passes the hook, but the hook keeps the depth.</p>
+<code>screen.colorDepth</code> passes the hook, but the hook keeps the depth. Brave's replacement is the smallest
+common desktop size at least as large as the window, and the available size becomes that same size. With a maximized
+window on a common-size screen and no taskbar or dock, both equal the real ones and the hook changes nothing: make the
+window smaller than the screen and reload, in both browsers.</p>
 <pre class="code" id="code-screen"></pre></details>
 <details class="demo" id="plugins"><summary>Plugins</summary>
 <p><b>Hook:</b> Brave renames the PDF plugin in <code>navigator.plugins</code> and adds two random plugins.
@@ -94,8 +99,10 @@ other <b>226</b> reach the same information without passing one. In Brave 1.92.1
 <b>92</b> of the 226 returned the value Brave returns with protection off, <b>49</b> leaked through WebGL only (canvas
 drawing calls), <b>36</b> were rewritten after all, <b>46</b> could not be checked by a page, and <b>3</b> are
 indistinguishable on our machine.</p>
-<p class="muted">Pairs and shared sources: the ground-truth slices (test/100-apis-manual), the hooked API being one
-Brave changed and the route one that leaked, in Brave 1.92.144. Numbers: out/rq2/predictions.jsonl and
+<p class="muted">Pairs: of the 141 APIs the 305-API run predicts to circumvent a Brave defense and Brave 1.92.144
+let through, the ones whose slice shares an end with an API Brave changed, checked on the hand-checked ground-truth
+slices (test/100-apis-manual) and on the 305-API run's automatic slices (out/full-2026-10-10); the last column says
+where each shared end is (out/rq2/poc/shared_ends.md). Numbers: out/rq2/predictions.jsonl and
 out/rq2/verify/bypasses/verdicts.csv. RQ3's page is at <a href="../pocrq3/">pocrq3</a>.</p>
 </div>
 <script src="poc.js"></script>
