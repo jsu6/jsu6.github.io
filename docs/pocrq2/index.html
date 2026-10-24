@@ -14,6 +14,32 @@
 <p class="muted">Minimal pages behind RQ2 of the paper <i>Slicing to the Roots</i>. Each page prints the exact code it
 runs and only shows values on the page; nothing is sent anywhere. Open a page in Chromium or Chrome first, copy the
 readings, then open it in Brave (Shields at their default) on the same machine and paste them to compare.</p>
+
+<h2>What we found</h2>
+<p>61 APIs read information a Brave defense protects. In Brave's default (Standard) level, the hook sits on the path
+of <b>28</b>: they are protected. The other <b>33</b> reach the same information without passing a hook that acts at
+Standard, so they circumvent the defense; in Brave 1.92.144, <b>29</b> of the 33 returned exactly the value Brave
+returns with fingerprinting protection off (Brave 1.97.59: the same counts). The rest: Screen.width and
+Screen.availWidth were rewritten after all, OffscreenCanvas.transferToImageBitmap leaks by one of its three read-back
+routes, and one could not be checked.</p>
+
+<h2>The pages</h2>
+<p class="muted">Per page, the defenses it shows. Readers: APIs that read the defended information. Protected: a hook
+acts on their path at Standard. Circumvent: predicted to bypass it at Standard; confirmed: returned the unprotected
+value in Brave 1.92.144.</p>
+<div class="scroll"><table>
+<thead><tr><th>page</th><th>defense</th><th>readers</th><th>protected</th><th>circumvent (confirmed)</th></tr></thead>
+<tbody>
+<tr><td rowspan="1"><a href="rq2-fullscreen.html">Fullscreen screen bypass</a></td><td>screen farbling</td>
+<td>20</td><td>4</td><td>16 (13)</td></tr>
+<tr><td rowspan="4"><a href="rq2-no-gesture.html">Unprotected readers</a></td><td>screen farbling (devicePixelRatio)</td>
+<td>20</td><td>4</td><td>16 (13)</td></tr>
+<tr><td>Web Audio farbling</td><td>6</td><td>3</td><td>3 (3)</td></tr>
+<tr><td>hardwareConcurrency farbling</td><td>2</td><td>2</td><td>0</td></tr>
+<tr><td>WebGL parameter block</td><td>5</td><td>0</td><td>5 (4)</td></tr>
+<tr><td><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a></td><td>canvas readback farbling</td>
+<td>6</td><td>5</td><td>1 (partly)</td></tr>
+</tbody></table></div>
 <ul>
 <li><a href="rq2-fullscreen.html">Fullscreen screen bypass</a>: Brave rewrites screen.width, but in fullscreen
 visualViewport.width is the true screen width. Needs one click.</li>
@@ -23,7 +49,9 @@ the same getParameter call are farbled.</li>
 <li><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a>: getImageData is farbled, but the same canvas read
 through WebGL readPixels is not.</li>
 </ul>
-<p class="muted">RQ3's page is at <a href="../pocrq3/">pocrq3</a>.</p>
+<p class="muted">Counts: out/rq2/verify/bypasses/verdicts.csv (the 61 APIs, their static grade and the Brave
+1.92.144 observation). An API can read several defenses' information; it is counted under each. RQ3's page is at
+<a href="../pocrq3/">pocrq3</a>.</p>
 </div>
 </body>
 </html>
