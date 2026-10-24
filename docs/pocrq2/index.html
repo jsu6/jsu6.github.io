@@ -6,54 +6,98 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Brave Defense Bypasses</title>
 <link rel="stylesheet" href="poc.css">
+<style>
+  .page { max-width: 1100px; }
+  :root { --hooked: #8a5a00; --hookedbg: #fbf0dc; --route: #1d4f8a; --routebg: #e4eef9; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; }
+  .steps > li { counter-increment: s; border: 1px solid var(--rule); padding: 12px 14px 12px 52px; position: relative; max-width: none; }
+  .steps > li::before { content: counter(s); position: absolute; left: 14px; top: 10px; width: 26px; height: 26px;
+                        background: var(--fg); color: var(--bg); font-weight: 700; text-align: center; line-height: 26px; }
+  .rule-box { background: var(--soft); padding: 12px 14px; margin: 12px 0; }
+  th.hooked, b.h { color: var(--hooked); } th.route, b.r { color: var(--route); }
+  td.hooked { background: var(--hookedbg); } td.route { background: var(--routebg); }
+  td .k { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 4px; overflow-wrap: anywhere; }
+  .cell { display: flex; gap: 6px; font: 600 13px/1.4 ui-monospace, Menlo, monospace; }
+  .cell .who { font: 11px/1.6 -apple-system, sans-serif; color: var(--muted); width: 58px; flex: none; }
+  .cell .v { overflow-wrap: anywhere; }
+  .yes { background: #1d6b3a; color: #fff; font-weight: 700; padding: 2px 8px; }
+  .no { background: #f8e3e0; color: #8a1c14; font-weight: 700; padding: 2px 8px; }
+  .wait { background: var(--soft); color: var(--muted); padding: 2px 8px; }
+  .why { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  td.src a { font: 12px ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  details.demo { border: 1px solid var(--rule); padding: 12px 16px; margin: 12px 0; }
+  details.demo > summary { cursor: pointer; font-weight: 600; font-size: 17px; }
+  pre.code { font-size: 12px; }
+</style>
 </head>
 <body>
 <div class="page">
 <div class="mark"></div>
-<h1>RQ2 proofs of concept: defenses that protect APIs, not information</h1>
-<p class="muted">Minimal pages behind RQ2 of the paper <i>Slicing to the Roots</i>. Each page prints the exact code it
-runs and only shows values on the page; nothing is sent anywhere, and no page asks for a permission.</p>
+<h1>RQ2 proofs of concept: Brave protects APIs, not information</h1>
+<p>Brave hides fingerprinting information by changing what the specific APIs it hooks return. Our slices show other
+APIs that end at the same source as a hooked API, the place where the information enters the renderer, without
+passing the hook. This page reads each piece of information both ways and compares Brave with Chromium.</p>
+<p class="muted">Nothing leaves this page, and it asks for no permission. Results move between the two windows only
+when you copy and paste them. Hooks as in Brave 1.92.144 (brave-core aeb45b6b); Chromium source 150.0.7871.186.</p>
 
-<h2>What we found</h2>
+<h2>How to check</h2>
+<ol class="steps">
+<li><b>In both browsers</b> (Brave with Shields at their default, and Chromium or Chrome, on the same machine), press
+<b>Run</b>.<br><button id="run" class="primary">Run</button> <span id="run-status" class="muted"></span></li>
+<li><b>In Chromium</b>, press <b>Copy results</b>.<br><button id="copy" disabled>Copy results</button>
+<textarea id="mine" rows="2" readonly></textarea></li>
+<li><b>In Brave</b>, paste them and press <b>Compare</b>.
+<textarea id="theirs" rows="2" placeholder="Paste Chromium's results here"></textarea>
+<button id="compare" class="primary">Compare</button> <span id="compare-status" class="muted"></span></li>
+</ol>
+<div class="rule-box"><b>A bypass works when both hold in Brave:</b> the <b class="h">hooked API</b> returns a
+different value from Chromium's (the hook is active), and the <b class="r">route</b> returns Chromium's value (the
+hook missed it). The last column is the source both slices end at.</div>
+
+<h2>Results</h2>
+<div class="scroll"><table>
+<thead><tr><th>information</th><th class="hooked">hooked API</th><th class="route">route around the hook</th>
+<th>bypass works?</th><th>shared slice end (Chromium)</th></tr></thead>
+<tbody id="board"></tbody>
+</table></div>
+
+<h2>How each works</h2>
+<details class="demo" id="canvas"><summary>Canvas pixels</summary>
+<p><b>Hook:</b> Brave adds per-site noise to the pixels in <code>getImageDataInternal</code> and in
+<code>ToDataURLInternal</code>, before it encodes the image. <b>Route:</b> <code>transferToImageBitmap</code> turns
+the same canvas into an <code>ImageBitmap</code> without passing either hook, and WebGL reads it back
+(<code>texImage2D</code>, <code>readPixels</code>); Brave's WebGL read-back hook acts only at Strict. All three slices
+end at the canvas pixels mapped back from GPU memory (the paper's motivating example). Every value is a hash of
+raw pixels; toDataURL's PNG is decoded without a 2D read, so the noise Brave put in it survives.</p>
+<pre class="code" id="code-canvas"></pre></details>
+<details class="demo" id="audio"><summary>Audio output device</summary>
+<p><b>Hook:</b> Brave adds per-site noise to the samples <code>AudioBuffer.getChannelData</code> returns.
+<b>Routes:</b> <code>sampleRate</code> and <code>baseLatency</code> of an <code>AudioContext</code>. Their slices and
+<code>getChannelData</code>'s end at the same source, the output device's <code>AudioParameters</code> (its sample rate
+and buffer size), and neither passes a Brave hook.</p>
+<pre class="code" id="code-audio"></pre></details>
+<details class="demo" id="screen"><summary>Screen</summary>
+<p><b>Hook:</b> Brave hands <code>Screen</code> a copy of the screen information with the size replaced by a common
+desktop size. <b>Routes:</b> <code>devicePixelRatio</code> and <code>screen.orientation</code> read the same screen
+information (the <code>ScreenInfo</code> the browser sends the renderer) without that hook;
+<code>screen.colorDepth</code> passes the hook, but the hook keeps the depth.</p>
+<pre class="code" id="code-screen"></pre></details>
+<details class="demo" id="plugins"><summary>Plugins</summary>
+<p><b>Hook:</b> Brave renames the PDF plugin in <code>navigator.plugins</code> and adds two random plugins.
+<b>Route:</b> <code>navigator.pdfViewerEnabled</code> reads the same plugin list without the hook.</p>
+<pre class="code" id="code-plugins"></pre></details>
+
+<h2>In numbers</h2>
 <p>Seeded with the 305 APIs Chromium marks <code>[HighEntropy]</code>, our analysis finds <b>233</b> APIs that read
-information a Brave defense protects. At Brave's default level (Standard), a hook sits on the path of <b>7</b>. The
-other <b>226</b> reach the same information without passing a hook that acts at Standard, so they circumvent the
-defense. In Brave 1.92.144 (two sites, two sessions each), of the 226:</p>
-<ul>
-<li><b>92</b> returned exactly the value Brave returns with fingerprinting protection off;</li>
-<li><b>49</b> leaked through one read-back route: canvas drawing calls, farbled through <code>getImageData</code> but
-not through WebGL;</li>
-<li><b>36</b> were rewritten after all, <b>46</b> could not be checked by a page, and <b>3</b> are indistinguishable on
-our machine (the protected value equals the true one).</li>
-</ul>
-
-<h2>The pages</h2>
-<p>One circumvention each, for three of Brave's defenses. Every page compares a protected API with an API that
-circumvents it, against the readings of the same page with Brave's fingerprinting protection off.</p>
-<div class="scroll"><table>
-<thead><tr><th>page</th><th>protected API (Brave farbles it)</th><th>circumventing API (true value)</th></tr></thead>
-<tbody>
-<tr><td><a href="rq2-canvas.html">Canvas</a></td><td><code>getImageData</code>, <code>toDataURL</code></td>
-<td><code>OffscreenCanvas.transferToImageBitmap</code>, read back through WebGL</td></tr>
-<tr><td><a href="rq2-audio.html">Audio</a></td><td><code>AudioBuffer.getChannelData</code></td>
-<td><code>OfflineAudioContext.startRendering</code>, samples read by an AudioWorklet</td></tr>
-<tr><td><a href="rq2-webgl.html">WebGL</a></td><td><code>getParameter</code>: the <code>MAX_*</code> limits</td>
-<td><code>getParameter</code>: the GPU vendor and renderer strings</td></tr>
-</tbody></table></div>
-
-<h2>The three defenses in numbers</h2>
-<p class="muted">Seed APIs whose slice reaches information the defense protects. An API often reaches several
-defenses' information, so it is counted under each, and the rows overlap.</p>
-<div class="scroll"><table>
-<thead><tr><th>defense</th><th>readers</th><th>protected at Standard</th><th>circumvent</th><th>leaked</th>
-<th>leaked through WebGL only</th><th>rewritten</th><th>can't check</th><th>indistinguishable</th></tr></thead>
-<tbody>
-<tr><td>canvas read-back farbling</td><td>204</td><td>3</td><td>201</td><td>87</td><td>49</td><td>21</td><td>42</td><td>2</td></tr>
-<tr><td>Web Audio farbling</td><td>201</td><td>2</td><td>199</td><td>87</td><td>49</td><td>22</td><td>39</td><td>2</td></tr>
-<tr><td>WebGL parameter and read-back farbling</td><td>207</td><td>0</td><td>207</td><td>90</td><td>49</td><td>26</td><td>40</td><td>2</td></tr>
-</tbody></table></div>
-<p class="muted">Numbers: out/rq2/predictions.jsonl (the static grade) and out/rq2/verify/bypasses/verdicts.csv (the
-Brave 1.92.144 observation). RQ3's page is at <a href="../pocrq3/">pocrq3</a>.</p>
+information a Brave defense protects. A hook that acts at Brave's default level sits on the path of <b>7</b>; the
+other <b>226</b> reach the same information without passing one. In Brave 1.92.144 (two sites, two sessions each),
+<b>92</b> of the 226 returned the value Brave returns with protection off, <b>49</b> leaked through WebGL only (canvas
+drawing calls), <b>36</b> were rewritten after all, <b>46</b> could not be checked by a page, and <b>3</b> are
+indistinguishable on our machine.</p>
+<p class="muted">Pairs and shared sources: the ground-truth slices (test/100-apis-manual), the hooked API being one
+Brave changed and the route one that leaked, in Brave 1.92.144. Numbers: out/rq2/predictions.jsonl and
+out/rq2/verify/bypasses/verdicts.csv. RQ3's page is at <a href="../pocrq3/">pocrq3</a>.</p>
 </div>
+<script src="poc.js"></script>
 </body>
 </html>
