@@ -1,11 +1,12 @@
-// RQ2 proofs of concept: each piece of information read through the API Brave hooks and through an API our
-// slices show ending at the same source without passing the hook, in Brave and in Chromium. A bypass works when, in
-// Brave, the hooked API differs from Chromium's (the hook is active) and the route still equals Chromium's (the hook
+// RQ2 proofs of concept: each piece of information read through the API Brave hooks and through a route that returns
+// the same information without passing the hook, in Brave and in Chromium. A bypass works when, in Brave, the hooked API
+// differs from Chromium's (the hook is active) and the route returns Chromium's value of the hooked API (the hook
 // missed it). Nothing is sent or stored; results cross windows only by copy and paste.
 'use strict';
 
 const $ = (id) => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ canvas
 const W = 240, H = 120;
@@ -38,7 +39,7 @@ async function readToDataURL() {
   const png = await (await fetch(c.toDataURL())).blob();
   return pixelsThroughWebGL(await createImageBitmap(png, {colorSpaceConversion: 'none', premultiplyAlpha: 'none'}));
 }
-// route: the canvas as an ImageBitmap, read back through WebGL
+// route: the same canvas as an ImageBitmap, read back through WebGL
 function readTransferToImageBitmap() {
   const o = new OffscreenCanvas(W, H);
   draw(o.getContext('2d'));
@@ -46,64 +47,75 @@ function readTransferToImageBitmap() {
 }
 
 // ------------------------------------------------------------------ audio
-// hooked: Brave adds per-site noise to the samples getChannelData returns (a 10 kHz triangle wave through a
-// compressor, rendered offline; nothing is played)
-async function readGetChannelData() {
+// A 10 kHz triangle wave through a compressor, rendered offline (nothing is played).
+async function render() {
   const ctx = new OfflineAudioContext(1, 44100, 44100);
   const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -50; comp.knee.value = 40; comp.ratio.value = 12; comp.attack.value = 0; comp.release.value = 0.25;
   osc.connect(comp); comp.connect(ctx.destination); osc.start(0);
-  const samples = (await ctx.startRendering()).getChannelData(0);
+  return ctx.startRendering();
+}
+// hooked: Brave adds per-site noise to the samples getChannelData returns
+async function readGetChannelData() {
+  const samples = (await render()).getChannelData(0);
   let s = 0; for (const x of samples) s += Math.abs(x);
   return s;
 }
-// routes: the output device's sample rate and buffer latency (nothing is played)
-async function readAudioDevice() {
-  const ctx = new AudioContext();
-  const out = {sampleRate: ctx.sampleRate, baseLatency: ctx.baseLatency};
-  await ctx.close();
-  return out;
+// route: the same rendered samples played into a second offline context, where an AudioWorklet sums them
+const SUM = URL.createObjectURL(new Blob([`registerProcessor('sum', class extends AudioWorkletProcessor {
+  constructor() { super(); this.s = 0; this.port.onmessage = () => this.port.postMessage(this.s); }
+  process(inputs) { for (const ch of inputs[0] || []) for (const x of ch) this.s += Math.abs(x); return true; }
+});`], {type: 'text/javascript'}));
+async function readThroughWorklet() {
+  const buffer = await render();
+  const ctx = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
+  await ctx.audioWorklet.addModule(SUM);
+  const src = new AudioBufferSourceNode(ctx, {buffer}), sum = new AudioWorkletNode(ctx, 'sum');
+  src.connect(sum); sum.connect(ctx.destination); src.start(0);
+  await ctx.startRendering();
+  return new Promise((r) => { sum.port.onmessage = (m) => r(m.data); sum.port.postMessage(0); });
 }
 
 // ------------------------------------------------------------------ screen
-// hooked: Brave replaces the screen size, and the available size with it, by the smallest common desktop size at
-// least as large as the window
-function readScreenWidth() {
-  return `${screen.width} × ${screen.height}, available ${screen.availWidth} × ${screen.availHeight}`;
+// hooked: Brave replaces the screen size by the smallest common desktop size at least as large as the window
+function readScreenSize() { return `${screen.width} × ${screen.height}`; }
+// route: in fullscreen the visual viewport is the screen (called from the Run click, which fullscreen needs)
+async function readFullscreenViewport() {
+  document.documentElement.style.overflow = 'hidden';  // no scrollbar, so the viewport spans the screen
+  await document.documentElement.requestFullscreen();
+  let last = -1, stable = 0;  // wait until the window manager has resized the window (the width unchanged for 1 s)
+  for (let i = 0; i < 100 && stable < 10; i++) {
+    await sleep(100);
+    stable = visualViewport.width === last ? stable + 1 : 0;
+    last = visualViewport.width;
+  }
+  const size = `${Math.round(visualViewport.width)} × ${Math.round(visualViewport.height)}`;
+  await document.exitFullscreen();
+  document.documentElement.style.overflow = '';
+  return size;
 }
-// routes: other fields of the same screen information
-function readScreenRoutes() {
-  return {devicePixelRatio: window.devicePixelRatio, orientation: screen.orientation.type, colorDepth: screen.colorDepth};
-}
-
-// ------------------------------------------------------------------ plugins
-// hooked: Brave renames the PDF plugin and adds two random plugins
-function readPlugins() { return [...navigator.plugins].map((p) => p.name).join(', '); }
-// route: whether the browser has a PDF viewer
-function readPdfViewerEnabled() { return navigator.pdfViewerEnabled; }
 
 // ------------------------------------------------------------------ the board
 const CHROMIUM = 'https://source.chromium.org/chromium/chromium/src/+/refs/tags/150.0.7871.186:';
+const PIXELS_IN = 'ground-truth slices; in the 305-API slices both stop one step earlier, at the image copied from these pixels';
 const ROWS = [
   {key: 'canvas1', info: 'Canvas pixels (SHA-256)', hooked: 'CanvasRenderingContext2D.getImageData',
    route: 'OffscreenCanvas.transferToImageBitmap → WebGL readPixels', demo: 'canvas',
-   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'mapping->GetSkPixmapForPlane(…): the canvas pixels mapped back from GPU memory', 'ground-truth slices; in the 305-API slices both stop one step earlier, at the image copied from these pixels']},
-  {key: 'canvas2', info: 'Canvas pixels (SHA-256)', hooked: 'HTMLCanvasElement.toDataURL',
+   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331,
+            'mapping->GetSkPixmapForPlane(…): the canvas pixels mapped back from GPU memory', PIXELS_IN]},
+  {key: 'canvas2', info: 'Canvas pixels (SHA-256)', hooked: 'HTMLCanvasElement.toDataURL (its PNG decoded)',
    route: 'OffscreenCanvas.transferToImageBitmap → WebGL readPixels', demo: 'canvas',
-   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'the same source', 'ground-truth slices; in the 305-API slices both stop one step earlier, at the image copied from these pixels']},
-  {key: 'audio1', info: 'Audio output device', hooked: 'AudioBuffer.getChannelData (sum)', route: 'BaseAudioContext.sampleRate',
-   demo: 'audio', source: ['media/base/audio_parameters.cc', 227, 'AudioParameters: sample_rate', 'ground-truth slices; in the 305-API slices both paths pass through it and continue upstream']},
-  {key: 'audio2', info: 'Audio output device', hooked: 'AudioBuffer.getChannelData (sum)', route: 'AudioContext.baseLatency',
-   demo: 'audio', source: ['media/base/audio_parameters.cc', 228, 'AudioParameters: frames_per_buffer', 'ground-truth slices; in the 305-API slices both paths pass through it and continue upstream']},
-  {key: 'screen1', info: 'Screen', hooked: 'Screen.width × height, availWidth × availHeight', route: 'Window.devicePixelRatio', demo: 'screen',
-   source: ['ui/display/mojom/screen_info_mojom_traits.cc', 21, 'ScreenInfo read from the browser: device_scale_factor', 'ground-truth and 305-API slices']},
-  {key: 'screen2', info: 'Screen', hooked: 'Screen.width × height, availWidth × availHeight', route: 'ScreenOrientation.type', demo: 'screen',
-   source: ['ui/display/mojom/screen_info_mojom_traits.cc', 15, 'ScreenInfo read from the browser: rect', 'ground-truth and 305-API slices']},
-  {key: 'screen3', info: 'Screen', hooked: 'Screen.width × height, availWidth × availHeight', route: 'Screen.colorDepth', demo: 'screen',
-   source: ['ui/display/mojom/screen_infos_mojom_traits.cc', 15, 'ScreenInfos read from the browser', 'ground-truth and 305-API slices']},
-  {key: 'plugins', info: 'Plugins', hooked: 'Navigator.plugins (names)', route: 'Navigator.pdfViewerEnabled', demo: 'plugins',
-   source: ['third_party/blink/renderer/core/page/plugin_data.cc', 102, 'registry->GetPlugins(&plugins): the plugin list', 'ground-truth and 305-API slices']},
+   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'the same source', PIXELS_IN]},
+  {key: 'audio', info: 'Rendered audio samples (sum)', hooked: 'AudioBuffer.getChannelData',
+   route: 'OfflineAudioContext.startRendering → AudioWorklet', demo: 'audio',
+   source: ['third_party/blink/renderer/modules/webaudio/offline_audio_context.cc', 163,
+            'only a feature flag (WebAudioConfigurableRenderQuantumEnabled): the samples are computed in the renderer and have no source of their own',
+            'ground-truth slices']},
+  {key: 'screen', info: 'Screen size (CSS px)', hooked: 'Screen.width × height', route: 'VisualViewport.width × height in fullscreen',
+   demo: 'screen', near: 1,
+   source: ['ui/display/mojom/screen_infos_mojom_traits.cc', 15, 'the screen information the browser sends the renderer',
+            'ground-truth and 305-API slices']},
 ];
 
 async function sha(bytes) {  // the first 8 bytes of SHA-256, in hex
@@ -112,49 +124,50 @@ async function sha(bytes) {  // the first 8 bytes of SHA-256, in hex
 }
 const attempt = async (f) => { try { return await f(); } catch (e) { return 'error: ' + (e && e.name || e); } };
 
-async function readAll() {  // row key -> {hooked, route}
+async function readAll() {  // row key -> {hooked, route}; the screen first, while the Run click still allows fullscreen
+  const size = readScreenSize();
+  const viewport = await attempt(readFullscreenViewport);
   const pixels = await attempt(async () => sha(readTransferToImageBitmap()));
-  const audioSum = await attempt(readGetChannelData);
-  const device = await attempt(readAudioDevice);
-  const screenRoutes = await attempt(readScreenRoutes);
-  const size = await attempt(readScreenWidth);
   return {
+    screen: {hooked: size, route: viewport},
     canvas1: {hooked: await attempt(async () => sha(readGetImageData())), route: pixels},
     canvas2: {hooked: await attempt(async () => sha(await readToDataURL())), route: pixels},
-    audio1: {hooked: audioSum, route: device.sampleRate},
-    audio2: {hooked: audioSum, route: device.baseLatency},
-    screen1: {hooked: size, route: screenRoutes.devicePixelRatio},
-    screen2: {hooked: size, route: screenRoutes.orientation},
-    screen3: {hooked: size, route: screenRoutes.colorDepth},
-    plugins: {hooked: await attempt(readPlugins), route: await attempt(readPdfViewerEnabled)},
+    audio: {hooked: await attempt(readGetChannelData), route: await attempt(readThroughWorklet)},
   };
 }
 
 let MINE = null, THEIRS = null;
 const fmt = (v) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Equal values; screen sizes within 1 px (a fractional devicePixelRatio rounds the two differently).
+function same(row, a, b) {
+  if (a === undefined || b === undefined) return false;
+  if (!row.near || typeof a !== 'string' || typeof b !== 'string') return JSON.stringify(a) === JSON.stringify(b);
+  const pa = a.split(' × ').map(Number), pb = b.split(' × ').map(Number);
+  return pa.length === 2 && pb.length === 2 && Math.abs(pa[0] - pb[0]) <= row.near && Math.abs(pa[1] - pb[1]) <= row.near;
+}
 
-function verdict(key) {
+function verdict(r) {
   if (!MINE) return '<span class="muted">press Run</span>';
   if (!THEIRS) return '<span class="muted">paste Chromium\'s results</span>';
-  const changed = !same(MINE[key].hooked, THEIRS[key].hooked), leaks = same(MINE[key].route, THEIRS[key].route);
-  if (changed && leaks) return '<span class="yes">yes</span><div class="why">the hook changes the hooked API; the route returns Chromium\'s value</div>';
+  const truth = THEIRS[r.key].hooked;
+  const changed = !same(r, MINE[r.key].hooked, truth), leaks = same(r, MINE[r.key].route, truth);
+  if (changed && leaks) return '<span class="yes">yes</span><div class="why">the hooked API differs from Chromium\'s; the route returns Chromium\'s value</div>';
   if (!changed) return '<span class="wait">not hooked here</span><div class="why">the hooked API returns Chromium\'s value in this browser</div>';
-  return '<span class="no">no</span><div class="why">the route differs from Chromium\'s here</div>';
+  return '<span class="no">no</span><div class="why">the route differs from Chromium\'s value too</div>';
 }
-// Columns: Chromium's values (the ground truth, pasted), this browser's hooked API, this browser's route.
+// Columns: Chromium's value of the hooked API (the ground truth, pasted), this browser's hooked API, this browser's route.
 function render() {
   const v = (x) => `<div class="v">${esc(fmt(x))}</div>`;
   const api = (name) => `<div class="k">${name}</div>`;
   $('board').innerHTML = ROWS.map((r) => {
     const gt = THEIRS ? THEIRS[r.key] : null, me = MINE ? MINE[r.key] : null;
     const mark = (ok, yes, no) => (gt && me ? `<div class="${ok ? 'ok' : 'muted'}">${ok ? yes : no}</div>` : '');
-    const truth = gt ? api(r.hooked) + v(gt.hooked) + api(r.route) + v(gt.route) : '<span class="muted">paste Chromium\'s results</span>';
-    const hooked = me ? api(r.hooked) + v(me.hooked) + mark(gt && !same(me.hooked, gt.hooked), 'differs from Chromium: hooked', 'same as Chromium') : '';
-    const route = me ? api(r.route) + v(me.route) + mark(gt && same(me.route, gt.route), 'same as Chromium: leaks', 'differs from Chromium') : '';
+    const truth = gt ? api(r.hooked) + v(gt.hooked) : '<span class="muted">paste Chromium\'s results</span>';
+    const hooked = me ? api(r.hooked) + v(me.hooked) + mark(gt && !same(r, me.hooked, gt.hooked), 'differs from Chromium: hooked', 'same as Chromium') : '';
+    const route = me ? api(r.route) + v(me.route) + mark(gt && same(r, me.route, gt.hooked), 'same as Chromium: leaks', 'differs from Chromium') : '';
     return `<tr><td>${r.info}<div><a href="#${r.demo}">how</a></div></td><td>${truth}</td>` +
-      `<td class="hooked">${hooked}</td><td class="route">${route}</td><td>${verdict(r.key)}</td>` +
+      `<td class="hooked">${hooked}</td><td class="route">${route}</td><td>${verdict(r)}</td>` +
       `<td class="src"><a href="${CHROMIUM}${r.source[0]};l=${r.source[1]}">${r.source[0].split('/').pop()}:${r.source[1]}</a>` +
       `<div class="why">${esc(r.source[2])}</div><div class="why"><i>in: ${esc(r.source[3])}</i></div></td></tr>`;
   }).join('');
@@ -164,13 +177,12 @@ function showCode(id, ...fns) { $(id).textContent = fns.map((f) => f.toString())
 
 document.addEventListener('DOMContentLoaded', () => {
   showCode('code-canvas', draw, readGetImageData, readToDataURL, readTransferToImageBitmap, pixelsThroughWebGL);
-  showCode('code-audio', readGetChannelData, readAudioDevice);
-  showCode('code-screen', readScreenWidth, readScreenRoutes);
-  showCode('code-plugins', readPlugins, readPdfViewerEnabled);
+  showCode('code-audio', render, readGetChannelData, readThroughWorklet);
+  showCode('code-screen', readScreenSize, readFullscreenViewport);
   render();
   $('run').onclick = async () => {
     $('run').disabled = true;
-    $('run-status').textContent = 'reading…';
+    $('run-status').textContent = 'reading… (fullscreen for a moment)';
     MINE = await readAll();
     $('run-status').textContent = 'done';
     $('run').disabled = false;
@@ -191,5 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
     catch (e) { $('compare-status').textContent = 'cannot read the pasted text: ' + e.message; return; }
     render();
   };
-  if (Q.get('report') === '1') $('run').onclick();
+  if (Q.get('report') === '1') {  // local verification: the harness sends one trusted click anywhere (fullscreen needs it)
+    addEventListener('click', (e) => { if (e.target.id !== 'run') $('run').onclick(); }, {once: true});
+  }
 });
