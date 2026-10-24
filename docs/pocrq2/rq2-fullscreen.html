@@ -100,17 +100,12 @@ $('compare').addEventListener('click', () => {
   // one device pixel wider than the screen, so the viewport is compared within 2 CSS px.
   const G = gt.readings, close = (a, b) => typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 2;
   const fsW = MINE['visualViewport.width (fullscreen)'];
-  const rows = [
-    {api: 'screen.width', gt: G['screen.width'], mine: MINE['screen.width'], same: G['screen.width'] === MINE['screen.width'],
-     note: 'protected by Brave'},
-    {api: 'visualViewport.width (fullscreen) vs screen.width', gt: G['screen.width'], mine: fsW, same: close(G['screen.width'], fsW),
-     note: 'this browser\'s fullscreen viewport against Chromium\'s screen.width (within 2 CSS px)'},
-    {api: 'visualViewport.width (fullscreen)', gt: G['visualViewport.width (fullscreen)'], mine: fsW,
-     same: G['visualViewport.width (fullscreen)'] === fsW, note: 'the same reading in both browsers (if you went fullscreen in Chromium too)'},
-    {api: 'devicePixelRatio', gt: G['devicePixelRatio'], mine: MINE['devicePixelRatio'], same: G['devicePixelRatio'] === MINE['devicePixelRatio'],
-     note: 'not protected; turns CSS px into device px'},
-  ];
-  renderTable($('cmp'), rows, `${gt.browser} (ground truth)`, browserName());
+  renderThree($('cmp'), [
+    {info: 'screen width (CSS px)', protectedKey: 'screen.width', bypassKey: 'visualViewport.width (fullscreen)',
+     gtKey: 'screen.width', tol: 2},
+    {info: 'display scale', protectedKey: null, bypassKey: 'devicePixelRatio'},
+  ], G, gt.browser);
+  const rows = [{same: G['screen.width'] === MINE['screen.width']}, {same: close(G['screen.width'], fsW)}];
   const v = $('verdict');
   v.hidden = false;
   if (fsW === undefined) { v.textContent = 'Click "Go fullscreen" first.'; return; }

@@ -16,29 +16,33 @@ runs and only shows values on the page; nothing is sent anywhere. Open a page in
 readings, then open it in Brave (Shields at their default) on the same machine and paste them to compare.</p>
 
 <h2>What we found</h2>
-<p>61 APIs read information a Brave defense protects. In Brave's default (Standard) level, the hook sits on the path
-of <b>28</b>: they are protected. The other <b>33</b> reach the same information without passing a hook that acts at
-Standard, so they circumvent the defense; in Brave 1.92.144, <b>29</b> of the 33 returned exactly the value Brave
-returns with fingerprinting protection off (Brave 1.97.59: the same counts). The rest: Screen.width and
-Screen.availWidth were rewritten after all, OffscreenCanvas.transferToImageBitmap leaks by one of its three read-back
-routes, and one could not be checked.</p>
+<p>Seeded with the 305 APIs Chromium marks <code>[HighEntropy]</code>, the static analysis finds <b>233</b> APIs that
+read information a Brave defense protects. In Brave's default (Standard) level a hook sits on the path of <b>7</b>; the
+other <b>226</b> reach the same information without a hook that acts at Standard: they are predicted to circumvent it.
+In Brave 1.92.144, two sessions on two sites each:</p>
+<ul>
+<li><b>92</b> of the 226 returned exactly the value Brave returns with fingerprinting protection off (leaked);</li>
+<li><b>49</b> leaked partly: the canvas drawing calls (<code>arc</code>, <code>fillRect</code>, <code>strokeText</code>,
+&hellip;), whose pixels are farbled through <code>getImageData</code> but read unchanged through WebGL;</li>
+<li><b>36</b> were rewritten after all (the prediction missed the hook), and <b>49</b> could not be checked here
+(paint worklets, hardware, permission prompts, or values this machine cannot tell apart).</li>
+</ul>
+<p class="muted">The 305-API seeds use the full run's slices, half of them truncated, so the information a defense
+protects is broad and one API often counts under several defenses; the per-page counts below overlap.</p>
 
 <h2>The pages</h2>
 <p class="muted">Per page, the defenses it shows. Readers: APIs that read the defended information. Protected: a hook
-acts on their path at Standard. Circumvent: predicted to bypass it at Standard; confirmed: returned the unprotected
-value in Brave 1.92.144.</p>
+acts on their path at Standard (rewritten in our run). Circumvent: predicted to bypass it at Standard, then what Brave
+1.92.144 returned: leaked, partly (one read-back route leaks), rewritten after all, or not checkable.</p>
 <div class="scroll"><table>
-<thead><tr><th>page</th><th>defense</th><th>readers</th><th>protected</th><th>circumvent (confirmed)</th></tr></thead>
+<thead><tr><th>page</th><th>defense</th><th>readers</th><th>protected (rewritten)</th><th>circumvent</th><th>leaked</th><th>partly</th><th>rewritten</th><th>can't check</th></tr></thead>
 <tbody>
-<tr><td rowspan="1"><a href="rq2-fullscreen.html">Fullscreen screen bypass</a></td><td>screen farbling</td>
-<td>20</td><td>4</td><td>16 (13)</td></tr>
-<tr><td rowspan="4"><a href="rq2-no-gesture.html">Unprotected readers</a></td><td>screen farbling (devicePixelRatio)</td>
-<td>20</td><td>4</td><td>16 (13)</td></tr>
-<tr><td>Web Audio farbling</td><td>6</td><td>3</td><td>3 (3)</td></tr>
-<tr><td>hardwareConcurrency farbling</td><td>2</td><td>2</td><td>0</td></tr>
-<tr><td>WebGL parameter block</td><td>5</td><td>0</td><td>5 (4)</td></tr>
-<tr><td><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a></td><td>canvas readback farbling</td>
-<td>6</td><td>5</td><td>1 (partly)</td></tr>
+<tr><td><a href="rq2-fullscreen.html">Fullscreen screen bypass</a></td><td>screen farbling</td><td>215</td><td>10 (9)</td><td>205</td><td>89</td><td>49</td><td>24</td><td>43</td></tr>
+<tr><td rowspan="4"><a href="rq2-no-gesture.html">Unprotected readers</a></td><td>screen farbling</td><td>215</td><td>10 (9)</td><td>205</td><td>89</td><td>49</td><td>24</td><td>43</td></tr>
+<tr><td>Web Audio farbling</td><td>201</td><td>2 (2)</td><td>199</td><td>89</td><td>49</td><td>22</td><td>39</td></tr>
+<tr><td>hardwareConcurrency farbling</td><td>2</td><td>2 (2)</td><td>0</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>WebGL parameter block</td><td>207</td><td>0</td><td>207</td><td>92</td><td>49</td><td>26</td><td>40</td></tr>
+<tr><td><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a></td><td>canvas readback farbling</td><td>204</td><td>3 (3)</td><td>201</td><td>89</td><td>49</td><td>21</td><td>42</td></tr>
 </tbody></table></div>
 <ul>
 <li><a href="rq2-fullscreen.html">Fullscreen screen bypass</a>: Brave rewrites screen.width, but in fullscreen
@@ -46,11 +50,14 @@ visualViewport.width is the true screen width. Needs one click.</li>
 <li><a href="rq2-no-gesture.html">Unprotected readers</a>: devicePixelRatio, the audio sample rate and base latency
 and the WebGL renderer string are the same as in Chromium, while hardwareConcurrency and the WebGL limits read through
 the same getParameter call are farbled.</li>
+<li><a href="rq2-all.html">Every circumventing reader</a>: the lab's probe for the 189 readable APIs of the
+226, each next to Chromium's value and our run's outcome, to check by hand.</li>
 <li><a href="rq2-webgl-readback.html">Canvas pixels through WebGL</a>: getImageData is farbled, but the same canvas read
 through WebGL readPixels is not.</li>
 </ul>
-<p class="muted">Counts: out/rq2/verify/bypasses/verdicts.csv (the 61 APIs, their static grade and the Brave
-1.92.144 observation). An API can read several defenses' information; it is counted under each. RQ3's page is at
+<p class="muted">Counts: out/rq2/predictions.jsonl (per defense and API, the static grade) and
+out/rq2/verify/bypasses/verdicts.csv (per API, the Brave 1.92.144 observation). On each page, paste Chromium's readings
+into Brave to see three columns: Chromium (the ground truth), Brave's protected API, and the API that circumvents it. RQ3's page is at
 <a href="../pocrq3/">pocrq3</a>.</p>
 </div>
 </body>

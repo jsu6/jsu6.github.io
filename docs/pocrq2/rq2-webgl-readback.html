@@ -84,8 +84,8 @@ $('copy').addEventListener('click', () => { $('out').hidden = false; copyReading
 $('compare').addEventListener('click', () => {
   let gt;
   try { gt = parsePasted($('paste').value); } catch (e) { $('cmp').textContent = 'Cannot read the pasted text: ' + e.message; return; }
-  renderTable($('cmp'), Object.keys(MINE).map((api) => ({api, gt: gt.readings[api], mine: MINE[api], same: gt.readings[api] === MINE[api]})),
-    `${gt.browser} (pasted)`, browserName());
+  renderThree($('cmp'), [{info: 'the canvas\'s pixels (SHA-256, first 8 bytes)', protectedKey: 'getImageData hash (2D route)',
+    bypassKey: 'readPixels hash (WebGL route)'}], gt.readings, gt.browser);
 });
 </script>
 </body>

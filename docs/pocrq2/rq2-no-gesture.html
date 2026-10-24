@@ -56,26 +56,40 @@ const LIMITS = ['MAX_VERTEX_UNIFORM_BLOCKS', 'MAX_FRAGMENT_UNIFORM_BLOCKS', 'MAX
   'MAX_UNIFORM_BUFFER_BINDINGS', 'MAX_VERTEX_UNIFORM_COMPONENTS', 'MAX_FRAGMENT_UNIFORM_COMPONENTS',
   'MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS', 'MAX_VERTEX_OUTPUT_COMPONENTS', 'MAX_FRAGMENT_INPUT_COMPONENTS',
   'MAX_VARYING_COMPONENTS', 'MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS'];
-function readProtectedSibling() {
+async function readProtectedSibling() {
   const gl = document.createElement('canvas').getContext('webgl2');
+  const audio = new OfflineAudioContext(1, 44100, 44100);   // rendered offline: no sound, no click
+  const osc = audio.createOscillator(), analyser = audio.createAnalyser();
+  osc.connect(analyser); analyser.connect(audio.destination); osc.start(0);
+  await audio.startRendering();
+  const spectrum = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(spectrum);                 // Brave farbles the analyser's output
   return {
+    'Screen.width': screen.width,                                                      // replaced by Brave
     'Navigator.hardwareConcurrency': navigator.hardwareConcurrency,                    // farbled per site
     'WebGL MAX_* limits (getParameter)': LIMITS.map((n) => gl.getParameter(gl[n])),    // lowered per site
+    'AnalyserNode.getFloatFrequencyData (sum)': spectrum.reduce((a, b) => a + b, 0),   // farbled per site
   };
 }
 // ------------------------------------------------------------------------------------------------
 showCode($('code'), readUnprotected, readProtectedSibling);
-const PROTECTED = new Set(Object.keys(readProtectedSibling()));
-Object.entries(Object.assign(readUnprotected(), readProtectedSibling())).forEach(([k, v]) => setReading(k, v));
-renderTable($('mine'), Object.entries(MINE).map(([api, v]) => ({api, mine: v})), '', `this browser (${browserName()})`);
-report({readings: MINE});
+const PAIRS = [
+  {info: 'display', protectedKey: 'Screen.width', bypassKey: 'Window.devicePixelRatio'},
+  {info: 'audio output device', protectedKey: 'AnalyserNode.getFloatFrequencyData (sum)', bypassKey: 'BaseAudioContext.sampleRate'},
+  {info: 'audio output device', protectedKey: 'AnalyserNode.getFloatFrequencyData (sum)', bypassKey: 'AudioContext.baseLatency'},
+  {info: 'GPU', protectedKey: 'WebGL MAX_* limits (getParameter)', bypassKey: 'WebGL renderer (getParameter)'},
+  {info: 'CPU cores', protectedKey: 'Navigator.hardwareConcurrency', bypassKey: null},
+];
+(async () => {
+  Object.entries(Object.assign(readUnprotected(), await readProtectedSibling())).forEach(([k, v]) => setReading(k, v));
+  renderTable($('mine'), Object.entries(MINE).map(([api, v]) => ({api, mine: v})), '', `this browser (${browserName()})`);
+  report({readings: MINE});
+})();
 $('copy').addEventListener('click', () => { $('out').hidden = false; copyReadings($('out')); });
 $('compare').addEventListener('click', () => {
   let gt;
   try { gt = parsePasted($('paste').value); } catch (e) { $('cmp').textContent = 'Cannot read the pasted text: ' + e.message; return; }
-  renderTable($('cmp'), Object.keys(MINE).map((api) => ({api, gt: gt.readings[api], mine: MINE[api],
-    same: JSON.stringify(gt.readings[api]) === JSON.stringify(MINE[api]), note: PROTECTED.has(api) ? 'protected sibling' : 'not protected'})),
-  `${gt.browser} (ground truth)`, browserName());
+  renderThree($('cmp'), PAIRS, gt.readings, gt.browser);
 });
 </script>
 </body>
