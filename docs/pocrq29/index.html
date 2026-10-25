@@ -17,13 +17,14 @@
   th.hooked, b.h { color: var(--hooked); } th.route, b.r { color: var(--route); }
   td.hooked { background: var(--hookedbg); } td.route { background: var(--routebg); }
   td .k { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 4px; overflow-wrap: anywhere; }
-  td .v { font: 600 13px/1.4 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
-  tr.grp th { background: var(--soft); padding-top: 12px; }
-  tr.grp .d { font-weight: 400; color: var(--muted); }
+  .cell { display: flex; gap: 6px; font: 600 13px/1.4 ui-monospace, Menlo, monospace; }
+  .cell .who { font: 11px/1.6 -apple-system, sans-serif; color: var(--muted); width: 58px; flex: none; }
+  .cell .v { overflow-wrap: anywhere; }
   .yes { background: #1d6b3a; color: #fff; font-weight: 700; padding: 2px 8px; }
   .no { background: #f8e3e0; color: #8a1c14; font-weight: 700; padding: 2px 8px; }
   .wait { background: var(--soft); color: var(--muted); padding: 2px 8px; }
-  .why { font-size: 12px; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
+  .why { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  td.src a { font: 12px ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
   details.demo { border: 1px solid var(--rule); padding: 12px 16px; margin: 12px 0; }
   details.demo > summary { cursor: pointer; font-weight: 600; font-size: 17px; }
   pre.code { font-size: 12px; }
@@ -32,43 +33,73 @@
 <body>
 <div class="page">
 <div class="mark"></div>
-<h1>RQ2: the confirmed bypasses, API by API</h1>
-<p>Our slices predict 33 APIs that read information a Brave defense protects but escape its default hooks. In Brave
-1.92.144, 29 of them returned the same value as with protection off. This page reads 24 of the 29 in Brave and in
-Chromium; the other five need a user event or a permission (two <code>WheelEvent</code> and three
-<code>ScreenDetailed</code> attributes).</p>
+<h1>RQ2: confirmed bypasses among the 29</h1>
+<p>In Brave 1.92.144, 29 of the 33 bypasses our slices predict returned the same value as Brave with protection off.
+A bypass is confirmed here only when it reads the same information as an API Brave hooks: this page reads each piece
+of information both ways and compares Brave with Chromium. Four of the 29 pair with a hooked API this way, without a
+permission or a user event: the canvas pixels <code>fillText</code> draws, the audio samples
+<code>startRendering</code> renders, and the screen size through <code>VisualViewport</code> and
+<code>innerWidth</code> in fullscreen. The other 25 read information Brave does not hide in its default profile, or
+need a permission or a user event.</p>
 <p class="muted">Nothing leaves this page, and it asks for no permission. Results move between the two windows only
 when you copy and paste them. Hooks as in Brave 1.92.144 (brave-core aeb45b6b); Chromium source 150.0.7871.186.</p>
 
 <h2>How to check</h2>
 <ol class="steps">
 <li><b>In both browsers</b> (Brave with Shields at their default, and Chromium or Chrome, on the same machine and
-display, with windows the same size and smaller than the screen, and page zoom at 100%), press <b>Run</b>.<br>
-<button id="run" class="primary">Run</button> <span id="run-status" class="muted"></span></li>
+display, with windows smaller than the screen and page zoom at 100%), press <b>Run</b>. It enters fullscreen for a
+moment to measure the screen.<br><button id="run" class="primary">Run</button> <span id="run-status" class="muted"></span></li>
 <li><b>In Chromium</b>, press <b>Copy results</b>.<br><button id="copy" disabled>Copy results</button>
 <textarea id="mine" rows="2" readonly></textarea></li>
 <li><b>In Brave</b>, paste them and press <b>Compare</b>.
 <textarea id="theirs" rows="2" placeholder="Paste Chromium's results here"></textarea>
 <button id="compare" class="primary">Compare</button> <span id="compare-status" class="muted"></span></li>
 </ol>
-<div class="rule-box"><b>A bypass works when both hold in Brave:</b> a <b class="h">hooked sibling</b>, an API the same
-defense changes at the default level, returns a different value from Chromium's (the defense is active), and the
-<b class="r">API</b> returns Chromium's value (the hook missed it). For the Strict-only rows, and for the two canvas
-rows whose hook acts only at Strict, nothing is hooked in a default profile, so only the second part applies.
-The user-agent rows also differ when the two browsers' versions differ.</div>
+<div class="rule-box"><b>A bypass works when both hold in Brave:</b> the <b class="h">hooked API</b> returns a
+different value from Chromium's (the hook is active), and the <b class="r">other API</b>, which reads the same
+information another way, returns Chromium's value of the hooked API (the hook missed it). The last column is the end
+both slices share.</div>
 
-<h2>Results <span id="summary" class="muted"></span></h2>
+<h2>Results</h2>
 <div class="scroll"><table>
-<thead><tr><th>Chromium: API (ground truth)</th><th class="hooked">this browser: hooked sibling</th>
-<th class="route">this browser: API</th><th>bypass works?</th></tr></thead>
+<thead><tr><th>information</th><th>Chromium: hooked API (ground truth)</th><th class="hooked">this browser: hooked API</th>
+<th class="route">this browser: other API</th><th>bypass works?</th><th>shared slice end (Chromium)</th></tr></thead>
 <tbody id="board"></tbody>
 </table></div>
 
-<h2>Code</h2>
-<details class="demo"><summary>What each row reads</summary><pre class="code" id="code"></pre></details>
-<p class="muted">Numbers: out/rq2/verify/bypasses (README.md, verdicts.csv); probe: analysis/rq2/pages/probe.js. The
-five-row proof of concept is at <a href="../pocrq2/">pocrq2</a>.</p>
+<h2>How each works</h2>
+<details class="demo" id="canvas"><summary>Canvas text pixels</summary>
+<p><b>Hook:</b> Brave adds per-site noise to the pixels <code>getImageData</code> returns. <b>Other API:</b> the pixels
+<code>fillText</code> drew, copied into WebGL (<code>createImageBitmap</code>, <code>texImage2D</code>) and read
+with <code>readPixels</code>; Brave's WebGL read-back hook acts only at Strict. Our slices grade
+<code>fillText</code> as reaching the canvas pixels around Brave's canvas hooks. The text is drawn on an opaque
+background, so both reads return the same bytes in Chromium. Each value is a hash of the raw pixels.</p>
+<pre class="code" id="code-canvas"></pre></details>
+<details class="demo" id="audio"><summary>Rendered audio samples</summary>
+<p><b>Hook:</b> Brave adds per-site noise to the samples <code>AudioBuffer.getChannelData</code> (and
+<code>copyFromChannel</code>) returns. <b>Other API:</b> the samples <code>OfflineAudioContext.startRendering</code>
+produced, played into a second offline context, where an <code>AudioWorklet</code> sums them without calling an
+<code>AudioBuffer</code> method. The two slices share only a feature flag
+(<code>WebAudioConfigurableRenderQuantumEnabled</code>): the samples are computed in the renderer and have no source of
+their own, so this row tests the consequence directly.</p>
+<pre class="code" id="code-audio"></pre></details>
+<details class="demo" id="screen"><summary>Screen size</summary>
+<p><b>Hook:</b> Brave hands <code>Screen</code> a copy of the screen information with the size replaced by the
+smallest common desktop size at least as large as the window. <b>Other APIs:</b> in fullscreen the visual viewport and
+the window are the screen, and <code>visualViewport</code> and <code>innerWidth</code> read the same screen information
+(the <code>ScreenInfos</code> the browser sends the renderer) without that hook. Run enters fullscreen for a moment; it needs page zoom at 100%. With a window as
+large as a common-size screen, Brave's replacement equals the real size and the hook changes nothing: make the window
+smaller than the screen and reload, in both browsers.</p>
+<pre class="code" id="code-screen"></pre></details>
+
+<h2>In numbers</h2>
+<p>Seeded with the 100 APIs whose slices we built by hand, our analysis finds <b>61</b> APIs that read information a
+Brave defense protects; <b>33</b> of them reach it past the hooks that act in Brave's default profile. In Brave 1.92.144
+(two sites, two sessions each), <b>29</b> of the 33 returned the value Brave returns with protection off. The four on
+this page also read the same value as an API Brave hooks.</p>
+<p class="muted">Numbers: out/rq2/predictions.jsonl and out/rq2/verify/bypasses (README.md, verdicts.csv). The five-row
+proof of concept is at <a href="../pocrq2/">pocrq2</a>.</p>
 </div>
-<script src="poc.js?v=2026-10-25b"></script>
+<script src="poc.js?v=2026-10-25c"></script>
 </body>
 </html>
