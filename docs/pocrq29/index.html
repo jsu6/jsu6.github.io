@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Brave Confirmed Bypasses</title>
+<link rel="stylesheet" href="../pocrq2/poc.css">
+<style>
+  .page { max-width: 1180px; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; }
+  .steps > li { counter-increment: s; border: 1px solid var(--rule); padding: 12px 14px 12px 52px; position: relative; max-width: none; }
+  .steps > li::before { content: counter(s); position: absolute; left: 14px; top: 10px; width: 26px; height: 26px;
+                        background: var(--fg); color: var(--bg); font-weight: 700; text-align: center; line-height: 26px; }
+  .rule-box { background: var(--soft); padding: 12px 14px; margin: 12px 0; }
+  #wheel { border: 2px dashed var(--rule); height: 90px; overflow-y: scroll; margin: 8px 0; padding: 8px; max-width: 420px; }
+  #wheel div { height: 600px; color: var(--muted); font-size: 14px; }
+  tr.grp th { background: var(--soft); padding-top: 12px; }
+  tr.grp .d { font-weight: 400; color: var(--muted); }
+  td .k { font: 12px ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  td .v { font: 12px/1.4 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; max-width: 260px; }
+  .sib { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .yes { background: #1d6b3a; color: #fff; font-weight: 700; padding: 2px 8px; }
+  .no { background: #f8e3e0; color: #8a1c14; font-weight: 700; padding: 2px 8px; }
+  .wait { background: var(--soft); color: var(--muted); padding: 2px 8px; }
+  .why { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--rule); white-space: nowrap; }
+  .summary { font-weight: 600; }
+  label { font-size: 14px; }
+  input[type=text] { font: inherit; padding: 4px 6px; border: 1px solid var(--fg); width: 260px; max-width: 100%; }
+</style>
+</head>
+<body>
+<div class="page">
+<div class="mark"></div>
+<h1>RQ2: the 29 confirmed bypasses, in your own browsers</h1>
+<p>Our slices predict 33 APIs that read information a Brave defense protects but escape its default (Standard)
+hooks. In Brave 1.92.144, 29 of them returned the same value as Brave with fingerprinting protection off, on two sites
+and in two sessions. This page reads those 29 with the probe code of our study, so you can repeat the check in real
+browsers and on real devices.</p>
+<p class="muted">Nothing leaves this page. Readings stay in this browser's local storage or move by copy and paste.
+Hooks as in Brave 1.92.144 (brave-core aeb45b6b); Chromium source 150.0.7871.186.</p>
+
+<h2>How to check</h2>
+<ol class="steps">
+<li><b>Scroll the mouse wheel</b> a few notches inside this box (three of the APIs are wheel events).
+<div id="wheel"><div>scroll here… <span id="wheel-status"></span></div></div></li>
+<li><b>Reference.</b> Keep the window smaller than the screen and page zoom at 100% (Brave's screen hook changes
+nothing when the window is as large as a common screen size). In Brave, open Shields for this site, turn <i>Block fingerprinting</i> off, reload, scroll the
+box, and press <b>Run</b>, then <b>Save as reference</b>. Allow the window-management prompt (three
+<code>ScreenDetailed</code> rows need it).<br>
+<button id="run" class="primary">Run</button> <button id="save-ref" disabled>Save as reference</button>
+<span id="run-status" class="muted"></span></li>
+<li><b>Test.</b> Turn <i>Block fingerprinting</i> back on (Standard), reload, scroll the box, and press <b>Run</b>.
+The table compares the two. Run again in a new window, or after restarting Brave, to see per-session noise.</li>
+<li><b>Other devices and browsers (optional).</b> Press <b>Copy readings</b> on each, paste them here with a label,
+and press <b>Add</b>. The last column counts distinct values, which shows whether an API tells setups apart.<br>
+<button id="copy" disabled>Copy readings</button>
+<textarea id="mine" rows="2" readonly></textarea>
+<label>label <input type="text" id="other-label" placeholder="e.g. MacBook M2, Chrome 150"></label>
+<textarea id="other" rows="2" placeholder="Paste readings from another device or browser"></textarea>
+<button id="add">Add</button> <button id="clear-others">Clear added readings</button> <button id="clear-ref">Clear reference</button>
+<span id="add-status" class="muted"></span></li>
+</ol>
+<div class="rule-box"><b>A bypass is confirmed when, in Brave Standard,</b> the API returns the reference value (Shields off)
+on every repeat, and Brave's defense is active, shown by a <i>sibling</i> API it hooks at the default level returning a
+different value. For the eight Strict-only rows, Brave does not hook the API in Standard by design; set
+<code>brave://flags/#brave-show-strict-fingerprinting-mode</code> and choose Strict to see the hook act.
+The <i>study</i> tag says what our own run showed beyond agreement: <b>knob</b> (follows a setting we varied, so it
+carries information), <b>Strict</b> (rewritten at Strict, so the probe sees a hook act), or <b>none</b> (the same value
+in every configuration we ran).</div>
+
+<h2>Results <span id="summary" class="summary muted"></span></h2>
+<div class="scroll"><table>
+<thead><tr><th>API</th><th>reference (Shields off)</th><th>this run</th><th>bypass?</th><th>other setups</th></tr></thead>
+<tbody id="board"></tbody>
+</table></div>
+
+<h2>Code</h2>
+<details class="demo"><summary>The probe code each row runs</summary><pre class="code" id="code"></pre></details>
+<p class="muted">Numbers: out/rq2/verify/bypasses (verdicts.csv) and out/rq2/verify/settings; probe:
+analysis/rq2/pages/probe.js. The five-row proof of concept is at <a href="../pocrq2/">pocrq2</a>.</p>
+</div>
+<script src="poc.js?v=2026-10-25"></script>
+</body>
+</html>
