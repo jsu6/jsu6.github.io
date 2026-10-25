@@ -23,11 +23,14 @@ values differ between devices. Nothing is sent by the page itself.</p>
 <li>Optional, before running: if you have a gamepad, press one of its buttons.</li>
 <li>Click <b>Run all</b>. It takes up to a few minutes; keep this tab in front, and allow the test window to
 open.</li>
-<li>Click <b>Copy results</b> and paste the text into a message to us. Running again later, or in another browser,
-helps too.</li>
+<li>Type the test machine, browser and visit number in <b>Test label</b>, e.g. <i>mac chrome 1</i>.</li>
+<li>Click <b>Copy results</b> and paste the text into a message to us. The label is saved with the results. Running
+again later (the next visit number), or in another browser, helps too.</li>
 </ol>
 </div>
 
+<p><label for="label">Test label</label>
+<input id="label" type="text" placeholder="machine browser visit, e.g. mac chrome 1" autocomplete="off" spellcheck="false"></p>
 <p><button class="primary" id="run">Run all</button>
 <button id="copy" disabled>Copy results</button>
 <span id="status" class="muted"></span></p>
@@ -137,7 +140,28 @@ if (Q.get('report') === '1') {  // local verification: the harness sends one tru
     body: JSON.stringify({ready: true, run: (Q.get('run') || 'none') + '.ready.0'})});
 }
 
-$('copy').onclick = () => {
+async function userAgent() {  // the browser's identity, as a backup to the label
+  const ua = {string: navigator.userAgent, platform: navigator.platform, vendor: navigator.vendor, data: null};
+  if (navigator.userAgentData) {
+    ua.data = {brands: navigator.userAgentData.brands, mobile: navigator.userAgentData.mobile,
+      platform: navigator.userAgentData.platform};
+    try {
+      Object.assign(ua.data, await navigator.userAgentData.getHighEntropyValues(
+        ['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'wow64']));
+    } catch (e) { ua.data.error = e.name; }
+  }
+  return ua;
+}
+
+$('copy').onclick = async () => {
+  const label = $('label').value.trim().replace(/\s+/g, ' ');
+  if (!label) {
+    $('status').textContent = 'type a test label first (machine browser visit, e.g. mac chrome 1)';
+    $('label').focus();
+    return;
+  }
+  rec.label = label;  // which machine, browser and visit these readings are, for the later comparison
+  rec.userAgent = await userAgent();
   const out = $('out');
   out.hidden = false;
   out.value = JSON.stringify(rec);
