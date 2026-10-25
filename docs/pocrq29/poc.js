@@ -1,7 +1,8 @@
-// RQ2: the 29 predicted bypasses of Brave's default hooks that our Brave 1.92.144 run confirmed, read with the
-// study's probe code (analysis/rq2/pages/probe.js). A bypass is confirmed when, in Brave Standard, the API returns the
-// reference value (Brave with fingerprinting protection off) on every repeat while a sibling API the same defense hooks
-// at the default level returns a changed value. Nothing is sent; readings stay in localStorage or move by copy and paste.
+// RQ2: 24 of the 29 predicted bypasses of Brave's default hooks that our Brave 1.92.144 run confirmed (the five that
+// need a wheel event or the window-management permission left out), read with the study's probe code
+// (analysis/rq2/pages/probe.js). A bypass is confirmed when, in Brave Standard, the API returns the reference value
+// (Brave with fingerprinting protection off) on every repeat while a sibling API the same defense hooks at the default
+// level returns a changed value. Nothing is sent; readings stay in localStorage or move by copy and paste.
 'use strict';
 
 const $ = (id) => document.getElementById(id);
@@ -124,19 +125,7 @@ async function encodingInfo() {
   return out;
 }
 
-// ------------------------------------------------------------------ Window Management and wheel input
-let SCREEN_DETAILS = null;
-async function screenDetailed(key) {
-  if (!SCREEN_DETAILS) throw new Error('window management not granted');
-  return SCREEN_DETAILS.currentScreen[key];
-}
-const WHEEL = [];
-function wheel(key) {
-  if (!WHEEL.length) throw new Error('no wheel event: scroll the box in step 1, then run again');
-  return WHEEL[0][key];
-}
-
-// ------------------------------------------------------------------ the 29 rows
+// ------------------------------------------------------------------ the 24 rows
 // kind: the static grade; defense: the Brave defense whose protected source the API reads; study: what our run showed
 // beyond agreement (knob, strict, none). read: the probe; reads are repeated REPS times.
 const SIBLINGS = {  // a sibling API the defense hooks at the default level, to show the defense is active
@@ -166,16 +155,11 @@ const ROWS = [
   ['ScreenOrientation.type', 'unhooked', 'brave-screen', 'knob', () => screen.orientation.type],
   ['VisualViewport.scale', 'unhooked', 'brave-screen', 'none', () => visualViewport.scale],
   ['VisualViewport.width', 'unhooked', 'brave-screen', 'knob', () => visualViewport.width],
-  ['WheelEvent.deltaMode', 'unhooked', 'brave-screen', 'none', () => wheel('deltaMode')],
-  ['WheelEvent.wheelDelta', 'unhooked', 'brave-screen', 'none', () => wheel('wheelDelta')],
   ['Window.devicePixelRatio', 'unhooked', 'brave-screen', 'knob', () => devicePixelRatio],
   ['Window.innerWidth', 'unhooked', 'brave-screen', 'knob', () => innerWidth],
   ['CanvasRenderingContext2D.fillText', 'around', 'brave-measuretext', 'knob', fillTextPixels],
-  ['ScreenDetailed.devicePixelRatio', 'around', 'brave-screen', 'knob', () => screenDetailed('devicePixelRatio')],
   ['Screen.colorDepth', 'field gap', 'brave-screen', 'none', () => screen.colorDepth],
   ['Screen.pixelDepth', 'field gap', 'brave-screen', 'none', () => screen.pixelDepth],
-  ['ScreenDetailed.isInternal', 'field gap', 'brave-screen', 'none', () => screenDetailed('isInternal')],
-  ['ScreenDetailed.label', 'field gap', 'brave-screen', 'none', () => screenDetailed('label')],
   ['WebGL2RenderingContext.getParameter (GPU strings)', 'field gap', 'brave-webgl', 'strict', gpuStrings],
   ['CanvasRenderingContext2D.isPointInPath', 'strict-only', 'brave-pointinpath', 'strict', () => { const x = ellipse(); return POINTS.map(([a, b]) => x.isPointInPath(a, b)); }],
   ['CanvasRenderingContext2D.isPointInStroke', 'strict-only', 'brave-pointinpath', 'none', () => { const x = ellipse(); return POINTS.map(([a, b]) => x.isPointInStroke(a, b)); }],
@@ -188,9 +172,6 @@ const ROWS = [
 ].map(([api, kind, defense, study, read]) => ({api, kind, defense, study, read}));
 
 async function readAll() {  // {api: [repeats]}, plus 'sibling:<defense>': [repeats]
-  try {  // first, while the Run click still counts as a user gesture
-    SCREEN_DETAILS = await Promise.race([window.getScreenDetails(), sleep(8000).then(() => { throw new Error('timed out'); })]);
-  } catch (e) { SCREEN_DETAILS = null; }
   const out = {};
   for (let i = 0; i < REPS; i++) {
     for (const r of ROWS) (out[r.api] = out[r.api] || []).push(await asafe(r.read));
@@ -274,10 +255,6 @@ function showCode() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  $('wheel').addEventListener('wheel', (e) => {
-    if (WHEEL.length < 6 && e.isTrusted) WHEEL.push({deltaMode: e.deltaMode, wheelDelta: e.wheelDelta});
-    $('wheel-status').textContent = `${WHEEL.length} wheel event(s) recorded`;
-  }, {passive: true});
   showCode();
   render();
   $('run').onclick = async () => {
