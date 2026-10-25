@@ -46,6 +46,30 @@ function readTransferToImageBitmap() {
   return pixelsThroughWebGL(o.transferToImageBitmap());
 }
 
+// route: the same canvas wrapped in a WebCodecs VideoFrame and copied out as RGBA (as fpdemo)
+async function readVideoFrameCopyTo() {
+  const c = Object.assign(document.createElement('canvas'), {width: W, height: H});
+  draw(c.getContext('2d'));
+  const frame = new VideoFrame(c, {timestamp: 0});
+  try {
+    const px = new Uint8Array(W * H * 4);
+    try {
+      await frame.copyTo(px, {format: 'RGBA'});
+    } catch (e) {  // no format conversion: copy the native layout and reorder it
+      const raw = new Uint8Array(frame.allocationSize());
+      await frame.copyTo(raw);
+      const bgr = frame.format.startsWith('BGR'), opaque = frame.format.endsWith('X');
+      for (let i = 0; i < px.length; i += 4) {
+        px[i] = raw[bgr ? i + 2 : i]; px[i + 1] = raw[i + 1]; px[i + 2] = raw[bgr ? i : i + 2];
+        px[i + 3] = opaque ? 255 : raw[i + 3];
+      }
+    }
+    return px;
+  } finally {
+    frame.close();
+  }
+}
+
 // ------------------------------------------------------------------ audio
 // A 10 kHz triangle wave through a compressor, rendered offline (nothing is played).
 async function renderSound() {
@@ -99,7 +123,7 @@ async function readFullscreenViewport() {
 
 // ------------------------------------------------------------------ the board
 const CHROMIUM = 'https://source.chromium.org/chromium/chromium/src/+/refs/tags/150.0.7871.186:';
-const PIXELS_IN = 'ground-truth slices; in the 305-API slices both stop one step earlier, at the image copied from these pixels';
+const PIXELS_IN = 'ground-truth slices';
 const ROWS = [
   {key: 'canvas1', info: 'Canvas pixels (SHA-256)', hooked: 'CanvasRenderingContext2D.getImageData',
    route: 'OffscreenCanvas.transferToImageBitmap → WebGL readPixels', demo: 'canvas',
@@ -108,6 +132,10 @@ const ROWS = [
   {key: 'canvas2', info: 'Canvas pixels (SHA-256)', hooked: 'HTMLCanvasElement.toDataURL (its PNG decoded)',
    route: 'OffscreenCanvas.transferToImageBitmap → WebGL readPixels', demo: 'canvas',
    source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'the same source', PIXELS_IN]},
+  {key: 'canvas3', info: 'Canvas pixels (SHA-256)', hooked: 'CanvasRenderingContext2D.getImageData',
+   route: 'VideoFrame.copyTo (the canvas as a WebCodecs frame)', demo: 'canvas',
+   source: ['third_party/blink/renderer/platform/graphics/canvas_resource.cc', 331, 'the same source',
+            'second pass over the API surface (VideoFrame.copyTo is not a ground-truth API): the same end, reached around the hooks']},
   {key: 'audio', info: 'Rendered audio samples (sum)', hooked: 'AudioBuffer.getChannelData',
    route: 'OfflineAudioContext.startRendering → AudioWorklet', demo: 'audio',
    source: ['third_party/blink/renderer/modules/webaudio/offline_audio_context.cc', 163,
@@ -116,7 +144,7 @@ const ROWS = [
   {key: 'screen', info: 'Screen size (CSS px)', hooked: 'Screen.width × height', route: 'VisualViewport.width × height in fullscreen',
    demo: 'screen', near: 1,
    source: ['ui/display/mojom/screen_infos_mojom_traits.cc', 15, 'the screen information the browser sends the renderer',
-            'ground-truth and 305-API slices']},
+            'ground-truth slices']},
 ];
 
 async function sha(bytes) {  // the first 8 bytes of SHA-256, in hex
@@ -135,6 +163,7 @@ async function readAll() {  // row key -> {hooked, route}; the screen first, whi
     screen: {hooked: size, route: viewport},
     canvas1: {hooked: await attempt(async () => sha(readGetImageData())), route: pixels},
     canvas2: {hooked: await attempt(async () => sha(await readToDataURL())), route: pixels},
+    canvas3: {hooked: await attempt(async () => sha(readGetImageData())), route: await attempt(async () => sha(await readVideoFrameCopyTo()))},
     audio: {hooked: await attempt(readGetChannelData), route: await attempt(readThroughWorklet)},
   };
 }
@@ -179,7 +208,8 @@ function render() {
 function showCode(id, ...fns) { $(id).textContent = fns.map((f) => f.toString()).join('\n\n'); }
 
 document.addEventListener('DOMContentLoaded', () => {
-  showCode('code-canvas', draw, readGetImageData, readToDataURL, readTransferToImageBitmap, pixelsThroughWebGL);
+  showCode('code-canvas', draw, readGetImageData, readToDataURL, readTransferToImageBitmap, pixelsThroughWebGL,
+    readVideoFrameCopyTo);
   showCode('code-audio', renderSound, readGetChannelData, readThroughWorklet);
   showCode('code-screen', readScreenSize, readFullscreenViewport);
   render();
@@ -210,7 +240,9 @@ document.addEventListener('DOMContentLoaded', () => {
     catch (e) { $('compare-status').textContent = 'cannot read the pasted text: ' + e.message; return; }
     render();
   };
-  if (Q.get('report') === '1') {  // local verification: the harness sends one trusted click anywhere (fullscreen needs it)
+  if (Q.get('report') === '1') {  // local verification: the harness sends one trusted click anywhere once ready (fullscreen needs it)
     addEventListener('click', (e) => { if (e.target.id !== 'run') $('run').onclick(); }, {once: true});
+    fetch('/report', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ready: true, run: (Q.get('run') || 'none') + '.ready.0'})});
   }
 });

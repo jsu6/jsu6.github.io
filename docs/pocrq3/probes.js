@@ -6,71 +6,66 @@
 
 const LAB = {
   "Window.resizeTo": [2, "can't-check", "can't-check"],
-  "Window.moveTo": [4, "can't-check", "can't-check"],
-  "Window.resizeBy": [5, "can't-check", "can't-check"],
-  "Window.moveBy": [6, "can't-check", "can't-check"],
-  "Viewport.segments": [8, "TP", "TP"],
-  "WindowControlsOverlayGeometryChangeEvent.visible": [12, "can't-check", "can't-check"],
-  "Navigator.presentation": [14, "FP constant", "FP constant"],
-  "WindowControlsOverlay.visible": [15, "FP constant", "FP constant"],
-  "Document.fullscreenEnabled": [16, "FP constant", "FP constant"],
-  "Document.webkitFullscreenEnabled": [17, "FP constant", "FP constant"],
-  "HTMLFrameElement.marginWidth": [18, "FP page state", "FP page state"],
-  "HTMLIFrameElement.marginHeight": [19, "FP page state", "FP page state"],
-  "HTMLIFrameElement.marginWidth": [20, "FP page state", "FP page state"],
+  "Window.moveBy": [3, "can't-check", "can't-check"],
+  "Window.resizeBy": [4, "can't-check", "can't-check"],
+  "Window.moveTo": [5, "can't-check", "can't-check"],
+  "Viewport.segments": [6, "TP", "TP"],
+  "SharedWorkerGlobalScope.name": [10, "FP page state", "FP page state"],
+  "DedicatedWorkerGlobalScope.name": [12, "FP page state", "FP page state"],
+  "ReportingObserver.observe": [13, "FP constant", "FP constant"],
+  "WindowControlsOverlay.visible": [14, "FP constant", "FP constant"],
   "RTCIceCandidate.priority": [26, "FP constant", "FP constant"],
-  "DedicatedWorkerGlobalScope.name": [27, "FP page state", "FP page state"],
-  "XRSystem.isSessionSupported": [33, "FP constant", "FP constant"],
-  "SharedWorkerGlobalScope.name": [34, "FP page state", "FP page state"],
-  "Document.pictureInPictureEnabled": [35, "FP constant", "FP constant"],
-  "HTMLFrameElement.marginHeight": [36, "FP page state", "FP page state"],
-  "BaseAudioContext.createPeriodicWave": [39, "FP constant", "FP constant"],
-  "MediaKeySession.sessionId": [41, "FP random", "FP random"],
-  "RTCIceCandidate.usernameFragment": [42, "FP random", "FP random"],
-  "GPUQueue.writeBuffer": [44, "can't-check", "can't-check"],
-  "RemotePlayback.watchAvailability": [46, "FP constant", "FP constant"],
-  "ScriptProcessorNode.bufferSize": [47, "FP constant", "FP constant"],
-  "AudioBuffer.numberOfChannels": [50, "FP page state", "FP page state"],
-  "Element.scrollIntoViewIfNeeded": [51, "TP", "TP"],
-  "AudioWorkletGlobalScope.currentTime": [52, "FP no value", "FP no value"],
-  "OscillatorNode.setPeriodicWave": [54, "FP constant", "FP constant"],
-  "Navigator.wakeLock": [55, "FP constant", "FP constant"],
-  "Window.scheduler": [57, "FP constant", "FP constant"],
-  "WorkerGlobalScope.scheduler": [58, "FP constant", "FP constant"],
-  "SVGSVGElement.animationsPaused": [59, "FP constant", "FP constant"],
-  "WorkerNavigator.wakeLock": [60, "FP constant", "FP constant"],
-  "GamepadButton.touched": [62, "can't-check", "can't-check"],
-  "AudioWorkletGlobalScope.sampleRate": [63, "TP", "TP"],
-  "TaskSignal.any": [64, "FP page state", "FP page state"],
-  "PeriodicWave.constructor": [65, "FP constant", "FP constant"],
-  "AudioBuffer.copyToChannel": [66, "FP page state", "FP page state"],
-  "SVGTextContentElement.getCharNumAtPosition": [67, "TP", "TP"],
-  "AudioProcessingEvent.playbackTime": [69, "FP random", "FP random"],
-  "WheelEvent.momentum": [71, "can't-check", "can't-check"],
-  "SVGTextContentElement.getNumberOfChars": [72, "FP page state", "FP page state"],
-  "GamepadButton.value": [73, "can't-check", "can't-check"],
-  "PerformanceScriptTiming.windowAttribution": [74, "FP page state", "FP page state"],
-  "IIRFilterNode.getFrequencyResponse": [75, "TP", "TP"],
-  "HTMLMediaElement.webkitVideoDecodedByteCount": [76, "FP constant", "FP constant"],
-  "GamepadButton.pressed": [78, "can't-check", "can't-check"],
-  "WebGLShaderPixelLocalStorage.isCoherent": [81, "can't-check", "can't-check"],
-  "TouchEvent.altKey": [82, "can't-check", "can't-check"],
-  "TouchEvent.ctrlKey": [83, "can't-check", "can't-check"],
-  "Keyboard.unlock": [85, "FP constant", "FP constant"],
-  "HTMLObjectElement.checkValidity": [89, "FP constant", "FP constant"],
-  "HTMLObjectElement.reportValidity": [90, "FP page state", "FP page state"],
-  "HTMLOutputElement.willValidate": [91, "FP page state", "FP page state"],
-  "RTCRtpReceiver.rtcpTransport": [92, "FP constant", "FP constant"],
-  "Storage.removeItem": [93, "FP page state", "FP page state"],
-  "WebGL2RenderingContextWebGPU.getActiveUniforms": [95, "can't-check", "can't-check"],
-  "WebGL2RenderingContextWebGPU.getBufferParameter": [96, "can't-check", "can't-check"],
-  "WebGL2RenderingContextWebGPU.getIndexedParameter": [97, "can't-check", "can't-check"],
-  "WebGL2RenderingContextWebGPU.getSamplerParameter": [98, "can't-check", "can't-check"],
-  "WebGL2RenderingContextWebGPU.getUniform": [99, "can't-check", "can't-check"],
-  "WebGL2RenderingContextWebGPU.getUniformBlockIndex": [100, "can't-check", "can't-check"]
+  "WindowControlsOverlayGeometryChangeEvent.visible": [27, "can't-check", "can't-check"],
+  "FileReaderSync.readAsBinaryString": [31, "FP page state", "FP page state"],
+  "MediaKeySession.sessionId": [33, "FP random", "FP random"],
+  "FileReaderSync.readAsArrayBuffer": [34, "FP page state", "FP page state"],
+  "RTCIceCandidate.usernameFragment": [35, "FP random", "FP random"],
+  "GPUQueue.writeBuffer": [37, "can't-check", "can't-check"],
+  "PerformanceTimingConfidence.value": [38, "FP random", "FP random"],
+  "IIRFilterNode.getFrequencyResponse": [39, "TP", "TP"],
+  "SVGSVGElement.animationsPaused": [40, "FP constant", "FP constant"],
+  "OscillatorNode.setPeriodicWave": [41, "FP constant", "FP constant"],
+  "AudioWorkletGlobalScope.currentTime": [42, "FP no value", "FP no value"],
+  "MediaStreamTrack.getSettings": [43, "TP", "TP"],
+  "RTCIceCandidate.url": [45, "FP constant", "FP constant"],
+  "BaseAudioContext.createPeriodicWave": [47, "FP constant", "FP constant"],
+  "ResizeObserverEntry.borderBoxSize": [48, "TP", "TP"],
+  "CSS.escape": [49, "FP page state", "FP page state"],
+  "ResizeObserverEntry.contentBoxSize": [50, "TP", "TP"],
+  "ResizeObserverEntry.devicePixelContentBoxSize": [51, "TP", "TP"],
+  "ScriptProcessorNode.bufferSize": [55, "FP constant", "FP constant"],
+  "LanguageModelToolCall.constructor": [56, "FP page state", "FP page state"],
+  "AudioProcessingEvent.playbackTime": [57, "FP random", "FP random"],
+  "SpeechSynthesis.cancel": [58, "FP random", "FP constant"],
+  "IntersectionObserver.trackVisibility": [59, "FP page state", "FP page state"],
+  "ResizeObserverSize.inlineSize": [61, "TP", "TP"],
+  "PeriodicWave.constructor": [62, "FP constant", "FP constant"],
+  "GamepadTouch.touchId": [66, "can't-check", "can't-check"],
+  "AudioWorkletGlobalScope.sampleRate": [67, "TP", "FP random"],
+  "Navigator.presentation": [68, "FP constant", "FP constant"],
+  "Document.webkitFullscreenEnabled": [69, "FP constant", "FP constant"],
+  "GamepadButton.touched": [71, "can't-check", "can't-check"],
+  "ResizeObserverSize.blockSize": [72, "TP", "TP"],
+  "Gamepad.buttons": [73, "can't-check", "can't-check"],
+  "Document.fullscreenEnabled": [76, "FP constant", "FP constant"],
+  "PerformanceTimingConfidence.randomizedTriggerRate": [80, "FP constant", "FP constant"],
+  "SharedStorage.worklet": [82, "FP constant", "FP constant"],
+  "GamepadButton.value": [84, "can't-check", "can't-check"],
+  "GamepadHapticActuator.type": [85, "can't-check", "can't-check"],
+  "PerformanceNavigationTiming.confidence": [86, "FP random", "FP random"],
+  "GamepadButton.pressed": [87, "can't-check", "can't-check"],
+  "GamepadTouch.surfaceId": [88, "can't-check", "can't-check"],
+  "MediaStream.getTracks": [89, "FP random", "FP random"],
+  "GamepadHapticActuator.effects": [90, "can't-check", "can't-check"],
+  "AudioBuffer.copyToChannel": [91, "FP page state", "FP page state"],
+  "ServiceWorker.scriptURL": [95, "FP page state", "FP page state"],
+  "HTMLIFrameElement.marginHeight": [97, "FP page state", "FP page state"],
+  "HTMLIFrameElement.marginWidth": [98, "FP page state", "FP page state"],
+  "SharedStorageWorklet.addModule": [99, "can't-check", "can't-check"],
+  "HandwritingDrawing.getPrediction": [100, "can't-check", "can't-check"]
 };
-const NEW = 84;
-const LEFT_OUT = ["ScreenDetails.screens", "ScreenDetailed.greenPrimaryX", "ScreenDetailed.redPrimaryX", "ScreenDetailed.whitePointX", "ScreenDetailed.highDynamicRangeHeadroom", "ScreenDetailed.bluePrimaryY", "ScreenDetailed.greenPrimaryY", "ScreenDetailed.bluePrimaryX", "ScreenDetailed.hdrHeadroom", "ScreenDetailed.whitePointY", "ScreenDetailed.redPrimaryY", "Window.minimize", "Window.maximize", "Window.restore", "FontData.postscriptName", "BluetoothAdvertisingEvent.rssi", "BluetoothLEScan.acceptAllAdvertisements", "NDEFReadingEvent.serialNumber", "CaptureController.setFocusBehavior", "PresentationConnectionCloseEvent.message", "PresentationConnection.url"];
+const NEW = 75;
+const LEFT_OUT = ["ScreenDetails.screens", "ScreenDetailed.greenPrimaryX", "ScreenDetailed.redPrimaryX", "ScreenDetailed.whitePointX", "ScreenDetailed.hdrHeadroom", "ScreenDetailed.redPrimaryY", "ScreenDetailed.highDynamicRangeHeadroom", "ScreenDetailed.bluePrimaryX", "ScreenDetailed.whitePointY", "ScreenDetailed.bluePrimaryY", "ScreenDetailed.greenPrimaryY", "Window.minimize", "Window.restore", "Window.maximize", "SpeechRecognitionResultList.length", "InputDeviceInfo.getCapabilities", "MediaStreamTrack.getCapabilities"];
 
 async function sha256(buf) {
   const d = await crypto.subtle.digest('SHA-256', buf);
@@ -200,8 +195,6 @@ async function renderPeriodicWave(make) {
   return {wave: await ser(wave), rendered: await sha256(bytesOf(buf.getChannelData(0)))};
 }
 
-const gl2 = once(() => document.createElement('canvas').getContext('webgl2'));
-
 const gpuDevice = once(async () => {
   need(navigator.gpu, 'navigator.gpu');
   const a = await navigator.gpu.requestAdapter();
@@ -220,57 +213,6 @@ function svgEl(markup) {
   return host.firstElementChild;
 }
 
-const VP8_WEBM_B64 = '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';
-
-const vp8Url = once(() => URL.createObjectURL(new Blob([Uint8Array.from(atob(VP8_WEBM_B64), (c) => c.charCodeAt(0))], {type: 'video/webm'})));
-
-function b1_loafScripts() {
-  need(window.PerformanceScriptTiming, 'PerformanceScriptTiming');
-  return new Promise((res) => {
-    const t0 = performance.now();
-    const scripts = [];
-    const po = new PerformanceObserver((list) => {
-      for (const e of list.getEntries()) if (e.startTime >= t0) scripts.push(...e.scripts);
-    });
-    po.observe({type: 'long-animation-frame', buffered: true});
-    setTimeout(function b1Busy() {
-      const end = performance.now() + 150;
-      while (performance.now() < end) { /* busy */ }
-      document.getElementById('stage').appendChild(document.createElement('span'));
-    }, 0);
-    setTimeout(() => { po.disconnect(); res(scripts); }, 2000);
-  });
-}
-
-function b2_workerEval(body) {
-  return new Promise((res, rej) => {
-    const url = URL.createObjectURL(new Blob([body], {type: 'text/javascript'}));
-    const w = new Worker(url);
-    w.onmessage = (m) => { res(m.data); w.terminate(); URL.revokeObjectURL(url); };
-    w.onerror = (e) => { rej(fail('WorkerError', e.message)); w.terminate(); };
-  });
-}
-
-function b2_wavURL(seconds = 0.25, rate = 44100) {
-  const n = Math.round(seconds * rate);
-  const buf = new ArrayBuffer(44 + n * 2);
-  const v = new DataView(buf);
-  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
-  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  str(36, 'data'); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.round(8000 * Math.sin(2 * Math.PI * 440 * i / rate)), true);
-  return URL.createObjectURL(new Blob([buf], {type: 'audio/wav'}));
-}
-
-function d1_webgpuGL() {
-  need(window.WebGL2RenderingContextWebGPU, 'WebGL2RenderingContextWebGPU');
-  const g = Object.assign(document.createElement('canvas'), {width: 8, height: 8}).getContext('webgl2');
-  need(g instanceof WebGL2RenderingContextWebGPU, 'a WebGL2RenderingContextWebGPU context');
-  return g;
-}
-
 function d2_worker(body, opts = {}) {
   return new Promise((res, rej) => {
     const url = URL.createObjectURL(new Blob([body], {type: 'text/javascript'}));
@@ -279,20 +221,6 @@ function d2_worker(body, opts = {}) {
     w.onmessage = (m) => { clearTimeout(t); res(m.data); w.terminate(); URL.revokeObjectURL(url); };
     w.onerror = (e) => { clearTimeout(t); rej(fail('WorkerError', e.message)); w.terminate(); };
   });
-}
-
-function d2_webgl2OnWebGPU() {
-  need(window.WebGL2RenderingContextWebGPU, 'WebGL2RenderingContextWebGPU');
-  const g = document.createElement('canvas').getContext('webgl2');
-  need(g instanceof WebGL2RenderingContextWebGPU, 'WebGL2RenderingContextWebGPU context');
-  return g;
-}
-
-function d3_mount(html) {
-  const host = document.createElement('div');
-  host.innerHTML = html;
-  document.getElementById('stage').appendChild(host);
-  return host;
 }
 
 function d4_sharedWorkerEval(body, name) {
@@ -304,37 +232,71 @@ function d4_sharedWorkerEval(body, name) {
   });
 }
 
-function d4_glWebGPU() {
-  need(window.WebGL2RenderingContextWebGPU, 'WebGL2RenderingContextWebGPU');
-  const g = document.createElement('canvas').getContext('webgl2');
-  if (!(g instanceof WebGL2RenderingContextWebGPU)) throw fail('NotExposed', 'webgl2 context is not WebGL2RenderingContextWebGPU');
-  return g;
+function e1_textBox(text = 'The quick brown fox 0123') {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:10px;top:10px;font:16px sans-serif;visibility:hidden';
+  d.textContent = text;
+  document.body.appendChild(d);
+  return d;
 }
 
-function d4_program(g, vs, fs) {
-  const p = g.createProgram();
-  for (const [type, src] of [[g.VERTEX_SHADER, vs], [g.FRAGMENT_SHADER, fs]]) {
-    const s = g.createShader(type);
-    g.shaderSource(s, src); g.compileShader(s);
-    if (!g.getShaderParameter(s, g.COMPILE_STATUS)) throw fail('ShaderError', String(g.getShaderInfoLog(s)));
-    g.attachShader(p, s);
-  }
-  g.linkProgram(p);
-  if (!g.getProgramParameter(p, g.LINK_STATUS)) throw fail('LinkError', String(g.getProgramInfoLog(p)));
-  return p;
+async function e1_resizeEntry(box) {
+  need(window.ResizeObserver, 'ResizeObserver');
+  const d = e1_textBox();
+  try {
+    return await new Promise((res, rej) => {
+      const ro = new ResizeObserver((es) => { ro.disconnect(); res(es[0]); });
+      ro.observe(d, {box});
+      setTimeout(() => { ro.disconnect(); rej(fail('NoObservation', 'no ResizeObserver callback in 3 s')); }, 3000);
+    });
+  } finally { d.remove(); }
 }
 
-const D4_VS3 = '#version 300 es\nin vec4 a; uniform ivec2 v; layout(std140) uniform Blk { vec4 c; }; void main() { gl_Position = a + c + vec4(v, 0, 0); }';
+function e2_mount(html) {
+  const host = document.createElement('div');
+  host.innerHTML = html;
+  document.getElementById('stage').appendChild(host);
+  return host;
+}
 
-const D4_FS3 = '#version 300 es\nprecision mediump float; out vec4 o; void main() { o = vec4(1.0); }';
+function e4_worker(body) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(new Blob([body], {type: 'text/javascript'}));
+    const w = new Worker(url);
+    const t = setTimeout(() => { w.terminate(); rej(fail('WorkerTimeout', 'no message from the worker')); }, 5000);
+    w.onmessage = (m) => { clearTimeout(t); w.terminate(); URL.revokeObjectURL(url); res(m.data); };
+    w.onerror = (e) => { clearTimeout(t); w.terminate(); rej(fail('WorkerError', e.message)); };
+  });
+}
 
 // ---- the probes, in the model's rank order ----
 const PROBES = {
   'Window.resizeTo': async () => { throw fail('NeedsGesture', 'resizeTo only resizes a popup opened by a user gesture'); },
-  'Window.moveTo': async () => { throw fail('NeedsGesture', 'moveTo only moves a popup opened by a user gesture'); },
-  'Window.resizeBy': async () => { throw fail('NeedsGesture', 'resizeBy only resizes a popup opened by a user gesture'); },
   'Window.moveBy': async () => { throw fail('NeedsGesture', 'moveBy only moves a popup opened by a user gesture'); },
+  'Window.resizeBy': async () => { throw fail('NeedsGesture', 'resizeBy only resizes a popup opened by a user gesture'); },
+  'Window.moveTo': async () => { throw fail('NeedsGesture', 'moveTo only moves a popup opened by a user gesture'); },
   'Viewport.segments': async () => { need(window.viewport, 'window.viewport'); return window.viewport.segments; },
+  'SharedWorkerGlobalScope.name': async () => {
+    need(window.SharedWorker, 'SharedWorker');
+    return d4_sharedWorkerEval('p.postMessage(self.name);', 'd4-shared');
+  },
+  'DedicatedWorkerGlobalScope.name': () => d2_worker('postMessage(self.name);', {name: 'd2-worker'}),
+  'ReportingObserver.observe': async () => {
+    need(window.ReportingObserver, 'ReportingObserver');
+    const reports = [];
+    const ro = new ReportingObserver((rs) => reports.push(...rs), {types: ['deprecation', 'intervention'], buffered: false});
+    const ret = await ser(ro.observe());
+    const x = new XMLHttpRequest();
+    x.open('GET', 'nocharset.html', false);
+    x.send();
+    await sleep(300);
+    reports.push(...ro.takeRecords());
+    ro.disconnect();
+    const seen = [...new Set(reports.map((r) => r.type + ':' + (r.body && r.body.id)))].sort();
+    return {ret, reports: seen};
+  },
+  'WindowControlsOverlay.visible': async () => { need(navigator.windowControlsOverlay, 'navigator.windowControlsOverlay'); return navigator.windowControlsOverlay.visible; },
+  'RTCIceCandidate.priority': () => candidateAttr('priority'),
   'WindowControlsOverlayGeometryChangeEvent.visible': async () => {
     need(navigator.windowControlsOverlay, 'navigator.windowControlsOverlay');
     const e = await new Promise((res, rej) => {
@@ -343,53 +305,17 @@ const PROBES = {
     });
     return e.visible;
   },
-  'Navigator.presentation': async () => navigator.presentation,
-  'WindowControlsOverlay.visible': async () => { need(navigator.windowControlsOverlay, 'navigator.windowControlsOverlay'); return navigator.windowControlsOverlay.visible; },
-  'Document.fullscreenEnabled': async () => document.fullscreenEnabled,
-  'Document.webkitFullscreenEnabled': async () => document.webkitFullscreenEnabled,
-  'HTMLFrameElement.marginWidth': async () => {
-    const f = document.createElement('frame');
-    f.setAttribute('marginwidth', '8');
-    return f.marginWidth;
-  },
-  'HTMLIFrameElement.marginHeight': async () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<iframe marginheight="7" srcdoc="x"></iframe>';
-    return host.firstElementChild.marginHeight;
-  },
-  'HTMLIFrameElement.marginWidth': async () => {
-    const host = document.createElement('div');
-    host.innerHTML = '<iframe marginwidth="7" style="display:none"></iframe>';
-    document.getElementById('stage').appendChild(host);
-    try { return host.firstElementChild.marginWidth; } finally { host.remove(); }
-  },
-  'RTCIceCandidate.priority': () => candidateAttr('priority'),
-  'DedicatedWorkerGlobalScope.name': () => d2_worker('postMessage(self.name);', {name: 'd2-worker'}),
-  'XRSystem.isSessionSupported': async () => {
-    need(navigator.xr, 'navigator.xr');
-    const out = {};
-    for (const mode of ['inline', 'immersive-vr', 'immersive-ar']) {
-      try { out[mode] = await navigator.xr.isSessionSupported(mode); } catch (e) { out[mode] = {$rejected: e.name}; }
-    }
-    return out;
-  },
-  'SharedWorkerGlobalScope.name': async () => {
-    need(window.SharedWorker, 'SharedWorker');
-    return d4_sharedWorkerEval('p.postMessage(self.name);', 'd4-shared');
-  },
-  'Document.pictureInPictureEnabled': async () => document.pictureInPictureEnabled,
-  'HTMLFrameElement.marginHeight': async () => {
-    const f = document.createElement('frame');
-    f.setAttribute('marginheight', '9');
-    return f.marginHeight;
-  },
-  'BaseAudioContext.createPeriodicWave': () => renderPeriodicWave((ctx, real, imag) => ctx.createPeriodicWave(real, imag)),
+  'FileReaderSync.readAsBinaryString': () => d2_worker(
+    'postMessage(new FileReaderSync().readAsBinaryString(new Blob([new Uint8Array([0x61, 0xe9, 0x00, 0xff, 0x7a])])));'),
   'MediaKeySession.sessionId': async () => {
     const keys = await (await keySystem()).createMediaKeys();
     const s = keys.createSession('temporary');
     await s.generateRequest('webm', new Uint8Array(16).fill(1));
     return s.sessionId;
   },
+  'FileReaderSync.readAsArrayBuffer': async () => e4_worker(
+    "const buf = new FileReaderSync().readAsArrayBuffer(new Blob(['e4 FileReaderSync payload', new Uint8Array([0, 1, 2, 255])]));" +
+    "postMessage(Array.from(new Uint8Array(buf)));"),
   'RTCIceCandidate.usernameFragment': () => candidateAttr('usernameFragment'),
   'GPUQueue.writeBuffer': async () => {
     const dev = await gpuDevice();
@@ -406,54 +332,21 @@ const PROBES = {
     dst.unmap();
     return {ret, error: err ? err.message : null, data};
   },
-  'RemotePlayback.watchAvailability': async () => {
-    const v = document.createElement('video');
-    document.getElementById('stage').appendChild(v);
-    need(v.remote && v.remote.watchAvailability, 'RemotePlayback.watchAvailability');
-    let avail = {$noCallback: true};
-    let got;
-    const called = new Promise((r) => { got = r; });
-    const id = await v.remote.watchAvailability((a) => { avail = a; got(); });
-    await Promise.race([called, sleep(1000)]);
-    await v.remote.cancelWatchAvailability(id).catch(() => {});
-    // the id is a page-local counter (ExecutionContext::CircularSequentialID): only its type is recorded
-    return {idIsInteger: Number.isInteger(id), availability: avail};
+  'PerformanceTimingConfidence.value': async () => {
+    const nav = performance.getEntriesByType('navigation')[0];
+    need(nav && nav.confidence, 'PerformanceNavigationTiming.confidence');
+    return nav.confidence.value;
   },
-  'ScriptProcessorNode.bufferSize': async () => {
+  'IIRFilterNode.getFrequencyResponse': async () => {
     const ctx = new AudioContext();
-    const v = ctx.createScriptProcessor(0, 1, 1).bufferSize;
+    const f = ctx.createIIRFilter([0.1, 0.2, 0.1], [1, -0.6, 0.2]);
+    const hz = new Float32Array([50, 440, 1000, 5000, 15000]);
+    const mag = new Float32Array(hz.length), ph = new Float32Array(hz.length);
+    const ret = await ser(f.getFrequencyResponse(hz, mag, ph));
     await ctx.close();
-    return v;
+    return {ret, mag: Array.from(mag), phase: Array.from(ph)};
   },
-  'AudioBuffer.numberOfChannels': async () => {
-    const off = new OfflineAudioContext(1, 128, 44100);
-    const url = b2_wavURL();
-    try {
-      const buf = await off.decodeAudioData(await (await fetch(url)).arrayBuffer());
-      return buf.numberOfChannels;
-    } finally { URL.revokeObjectURL(url); }
-  },
-  'Element.scrollIntoViewIfNeeded': async () => {
-    const box = document.createElement('div');
-    box.style.cssText = 'width:150px;height:60px;overflow:auto;font:16px sans-serif';
-    box.textContent = 'The quick brown fox jumps over the lazy dog. '.repeat(12);
-    const t = document.createElement('span');
-    t.textContent = 'target';
-    box.appendChild(t);
-    box.append(' tail text after the target element.'.repeat(4));
-    document.getElementById('stage').appendChild(box);
-    const sx = scrollX, sy = scrollY;
-    try {
-      const ret = await ser(t.scrollIntoViewIfNeeded(true));
-      return {ret, scrollTop: box.scrollTop, scrollLeft: box.scrollLeft, windowScrollY: scrollY - sy};
-    } finally { box.remove(); window.scrollTo(sx, sy); }
-  },
-  'AudioWorkletGlobalScope.currentTime': async () => {
-    const {msgs} = await audioFixture();
-    const m = msgs.find((x) => x.kind === 'process');
-    if (!m) throw fail('NoProcess', 'AudioWorkletProcessor.process was not called');
-    return m.currentTime;
-  },
+  'SVGSVGElement.animationsPaused': async () => svgEl('').animationsPaused(),
   'OscillatorNode.setPeriodicWave': async () => {
     const off = new OfflineAudioContext(1, 4410, 44100);
     const wave = off.createPeriodicWave(new Float32Array([0, 0.5, 0.25, 0.125]), new Float32Array([0, 0.1, 0.3, 0.2]));
@@ -465,40 +358,59 @@ const PROBES = {
     const buf = await off.startRendering();
     return {ret, rendered: await sha256(bytesOf(buf.getChannelData(0)))};
   },
-  'Navigator.wakeLock': async () => { need(navigator.wakeLock, 'navigator.wakeLock'); return navigator.wakeLock; },
-  'Window.scheduler': async () => { need(window.scheduler, 'window.scheduler'); return window.scheduler; },
-  'WorkerGlobalScope.scheduler': () => b2_workerEval(
-    "postMessage(self.scheduler ? {type: Object.prototype.toString.call(self.scheduler), postTask: typeof self.scheduler.postTask, yield: typeof self.scheduler.yield} : null);"),
-  'SVGSVGElement.animationsPaused': async () => svgEl('').animationsPaused(),
-  'WorkerNavigator.wakeLock': () => b2_workerEval(
-    "postMessage({has: 'wakeLock' in navigator, type: navigator.wakeLock ? Object.prototype.toString.call(navigator.wakeLock) : null});"),
-  'GamepadButton.touched': async () => {
-    const gp = [...navigator.getGamepads()].find((g) => g);
-    if (!gp) throw fail('NotFoundError', 'no gamepad connected');
-    return gp.buttons.map((b) => b.touched);
-  },
-  'AudioWorkletGlobalScope.sampleRate': async () => {
+  'AudioWorkletGlobalScope.currentTime': async () => {
     const {msgs} = await audioFixture();
-    const m = msgs.find((x) => x.kind === 'ctor');
-    if (!m) throw fail('NoProcessor', 'AudioWorkletProcessor was not constructed');
-    return m.sampleRate;
+    const m = msgs.find((x) => x.kind === 'process');
+    if (!m) throw fail('NoProcess', 'AudioWorkletProcessor.process was not called');
+    return m.currentTime;
   },
-  'TaskSignal.any': async () => {
-    need(window.TaskSignal && TaskSignal.any, 'TaskSignal.any');
-    const c = new TaskController({priority: 'user-visible'});
-    return TaskSignal.any([c.signal, new AbortController().signal], {priority: 'background'});
+  'MediaStreamTrack.getSettings': async () => {
+    // No camera or microphone: a track from a MediaStreamAudioDestinationNode, whose format is the AudioContext's.
+    const ac = new AudioContext();
+    const dest = ac.createMediaStreamDestination();
+    const osc = ac.createOscillator();
+    osc.connect(dest);
+    osc.start();
+    const track = dest.stream.getAudioTracks()[0];
+    try {
+      const t0 = performance.now();
+      // resume() stays pending without a gesture: bound each wait (as for BaseAudioContext.currentTime)
+      while (ac.state !== 'running' && performance.now() - t0 < 3000) { await Promise.race([ac.resume().catch(() => {}), sleep(200)]); }
+      await sleep(300);
+      const s = track.getSettings();
+      delete s.deviceId;  // "WebAudio-" + a fresh random UUID per node (not the value under test)
+      return s;
+    } finally { track.stop(); osc.stop(); await Promise.race([ac.close(), sleep(1000)]); }
   },
-  'PeriodicWave.constructor': () => renderPeriodicWave((ctx, real, imag) => new PeriodicWave(ctx, {real, imag})),
-  'AudioBuffer.copyToChannel': async () => {
-    const b = new AudioBuffer({numberOfChannels: 1, length: 8, sampleRate: 44100});
-    const ret = await ser(b.copyToChannel(new Float32Array([0.5, -0.25, 0.125]), 0, 2));
-    return {ret, data: Array.from(b.getChannelData(0))};
+  'RTCIceCandidate.url': () => candidateAttr('url'),
+  'BaseAudioContext.createPeriodicWave': () => renderPeriodicWave((ctx, real, imag) => ctx.createPeriodicWave(real, imag)),
+  'ResizeObserverEntry.borderBoxSize': async () => {
+    const host = e2_mount('<span style="display:inline-block;font:16px sans-serif;padding:1px;white-space:nowrap">The quick brown fox Hg 0123456789</span>');
+    const el = host.firstElementChild;
+    try {
+      return await new Promise((res, rej) => {
+        const ro = new ResizeObserver((entries) => {
+          ro.disconnect();
+          res(entries[0].borderBoxSize.map((s) => ({inlineSize: s.inlineSize, blockSize: s.blockSize})));
+        });
+        ro.observe(el);
+        setTimeout(() => { ro.disconnect(); rej(fail('NoEntry', 'no ResizeObserver callback')); }, 3000);
+      });
+    } finally { host.remove(); }
   },
-  'SVGTextContentElement.getCharNumAtPosition': async () => {
-    const t = svgEl('<text x="1" y="20" style="font:16px sans-serif">abcdefghij</text>').firstElementChild;
-    const out = [];
-    for (const x of [5, 15, 25, 35, 45, 55, 65, 75]) out.push(t.getCharNumAtPosition({x, y: 15}));
-    return out;
+  'CSS.escape': async () => ['e2-id', '0abc', '-1x', 'a b#c', '\u0000z', 'é中', '--'].map((s) => CSS.escape(s)),
+  'ResizeObserverEntry.contentBoxSize': async () => (await e1_resizeEntry('content-box')).contentBoxSize,
+  'ResizeObserverEntry.devicePixelContentBoxSize': async () => (await e1_resizeEntry('device-pixel-content-box')).devicePixelContentBoxSize,
+  'ScriptProcessorNode.bufferSize': async () => {
+    const ctx = new AudioContext();
+    const v = ctx.createScriptProcessor(0, 1, 1).bufferSize;
+    await ctx.close();
+    return v;
+  },
+  'LanguageModelToolCall.constructor': async () => {
+    need(window.LanguageModelToolCall, 'LanguageModelToolCall');
+    const c = new LanguageModelToolCall({callID: 'call-1', name: 'getWeather', arguments: {city: 'Raleigh', days: 2}});
+    return {callID: c.callID, name: c.name, arguments: c.arguments};
   },
   'AudioProcessingEvent.playbackTime': async () => {
     const ctx = new AudioContext();
@@ -517,126 +429,164 @@ const PROBES = {
       return r.playbackTime;
     } finally { await ctx.close(); }
   },
-  'WheelEvent.momentum': async () => { throw fail('NeedsGesture', 'trusted wheel event needs a user gesture'); },
-  'SVGTextContentElement.getNumberOfChars': async () => svgEl('<text x="1" y="20">abc</text>').firstElementChild.getNumberOfChars(),
+  'SpeechSynthesis.cancel': async () => {
+    need(window.speechSynthesis, 'speechSynthesis');
+    const u = new SpeechSynthesisUtterance('probe');
+    u.volume = 0;
+    const outcome = new Promise((res) => {
+      u.onend = () => res('end');
+      u.onerror = (e) => res('error:' + e.error);
+      setTimeout(() => res('none'), 2000);
+    });
+    speechSynthesis.speak(u);
+    const ret = await ser(speechSynthesis.cancel());
+    const state = {speaking: speechSynthesis.speaking, pending: speechSynthesis.pending};
+    return {ret, ...state, outcome: await outcome};
+  },
+  'IntersectionObserver.trackVisibility': async () => new IntersectionObserver(() => {}, {trackVisibility: true, delay: 100}).trackVisibility,
+  'ResizeObserverSize.inlineSize': async () => (await e1_resizeEntry('content-box')).contentBoxSize[0].inlineSize,
+  'PeriodicWave.constructor': () => renderPeriodicWave((ctx, real, imag) => new PeriodicWave(ctx, {real, imag})),
+  'GamepadTouch.touchId': async () => {
+    need(navigator.getGamepads, 'navigator.getGamepads');
+    const pads = [...navigator.getGamepads()].filter((p) => p);
+    if (!pads.length) throw fail('NeedsHardware', 'no gamepad connected (exposed only after input on one)');
+    const ids = [];
+    for (const p of pads) {
+      need('touchEvents' in p, 'Gamepad.touchEvents');
+      for (const t of p.touchEvents || []) ids.push(t.touchId);
+    }
+    if (!ids.length) throw fail('NeedsHardware', 'no gamepad touch surface event');
+    return ids;
+  },
+  'AudioWorkletGlobalScope.sampleRate': async () => {
+    const {msgs} = await audioFixture();
+    const m = msgs.find((x) => x.kind === 'ctor');
+    if (!m) throw fail('NoProcessor', 'AudioWorkletProcessor was not constructed');
+    return m.sampleRate;
+  },
+  'Navigator.presentation': async () => navigator.presentation,
+  'Document.webkitFullscreenEnabled': async () => document.webkitFullscreenEnabled,
+  'GamepadButton.touched': async () => {
+    const gp = [...navigator.getGamepads()].find((g) => g);
+    if (!gp) throw fail('NotFoundError', 'no gamepad connected');
+    return gp.buttons.map((b) => b.touched);
+  },
+  'ResizeObserverSize.blockSize': async () => {
+    const d = document.createElement('div');
+    d.style.cssText = 'width:120px;font:16px sans-serif;';
+    d.textContent = 'The quick brown fox jumps over the lazy dog 0123456789';
+    document.getElementById('stage').appendChild(d);
+    try {
+      const entries = await new Promise((res, rej) => {
+        const t = setTimeout(() => rej(fail('NoObservation', 'no ResizeObserver callback')), 3000);
+        const o = new ResizeObserver((es) => { clearTimeout(t); o.disconnect(); res(es); });
+        o.observe(d);
+      });
+      return entries[0].contentBoxSize[0].blockSize;
+    } finally { d.remove(); }
+  },
+  'Gamepad.buttons': async () => {
+    const gp = [...navigator.getGamepads()].find((g) => g);
+    if (!gp) throw fail('NeedsHardware', 'no gamepad connected');
+    return gp.buttons.map((b) => ({pressed: b.pressed, touched: b.touched, value: b.value}));
+  },
+  'Document.fullscreenEnabled': async () => document.fullscreenEnabled,
+  'PerformanceTimingConfidence.randomizedTriggerRate': async () => {
+    const nav = performance.getEntriesByType('navigation')[0];
+    need(nav && nav.confidence, 'PerformanceNavigationTiming.confidence');
+    return nav.confidence.randomizedTriggerRate;
+  },
+  'SharedStorage.worklet': async () => {
+    need(window.sharedStorage, 'window.sharedStorage');
+    const w = window.sharedStorage.worklet;
+    return {type: Object.prototype.toString.call(w), same: w === window.sharedStorage.worklet,
+      isWorklet: typeof SharedStorageWorklet !== 'undefined' && w instanceof SharedStorageWorklet};
+  },
   'GamepadButton.value': async () => { throw fail('NeedsHardware', 'gamepad (exposed only after a button press on it)'); },
-  'PerformanceScriptTiming.windowAttribution': async () => {
-    const scripts = await b1_loafScripts();
-    if (!scripts.length) throw fail('NoEntry', 'no long-animation-frame script entry');
-    return [...new Set(scripts.map((s) => s.windowAttribution))].sort();
+  'GamepadHapticActuator.type': async () => {
+    const gp = [...navigator.getGamepads()].find((g) => g && g.vibrationActuator);
+    if (!gp) throw fail('NotFoundError', 'no gamepad with a vibration actuator');
+    return gp.vibrationActuator.type;
   },
-  'IIRFilterNode.getFrequencyResponse': async () => {
-    const ctx = new AudioContext();
-    const f = ctx.createIIRFilter([0.1, 0.2, 0.1], [1, -0.6, 0.2]);
-    const hz = new Float32Array([50, 440, 1000, 5000, 15000]);
-    const mag = new Float32Array(hz.length), ph = new Float32Array(hz.length);
-    const ret = await ser(f.getFrequencyResponse(hz, mag, ph));
-    await ctx.close();
-    return {ret, mag: Array.from(mag), phase: Array.from(ph)};
-  },
-  'HTMLMediaElement.webkitVideoDecodedByteCount': async () => {
-    const v = document.createElement('video');
-    v.muted = true;
-    need('webkitVideoDecodedByteCount' in v, 'webkitVideoDecodedByteCount');
-    document.getElementById('stage').appendChild(v);
-    const ended = new Promise((res, rej) => { v.onended = res; v.onerror = () => rej(fail('MediaError', String(v.error && v.error.code))); });
-    v.src = vp8Url();
-    await v.play();
-    await ended;
-    return v.webkitVideoDecodedByteCount;
+  'PerformanceNavigationTiming.confidence': async () => {
+    const nav = () => performance.getEntriesByType('navigation')[0];
+    need(nav() && 'confidence' in nav(), 'PerformanceNavigationTiming.confidence');
+    for (let i = 0; i < 30 && nav().confidence === null; i++) await sleep(100);
+    const c = nav().confidence;
+    return c ? c.toJSON() : c;
   },
   'GamepadButton.pressed': async () => {
     const gp = [...navigator.getGamepads()].find((g) => g);
     if (!gp) throw fail('NotFoundError', 'no gamepad connected');
     return gp.buttons.map((b) => b.pressed);
   },
-  'WebGLShaderPixelLocalStorage.isCoherent': async () => {
-    const g = gl2();
-    need(g, 'WebGL2 context');
-    const ext = g.getExtension('WEBGL_shader_pixel_local_storage');
-    return ext ? ext.isCoherent() : null;
+  'GamepadTouch.surfaceId': async () => {
+    const gp = [...navigator.getGamepads()].find((g) => g);
+    if (!gp) throw fail('NotFoundError', 'no gamepad connected');
+    need(gp.touchEvents, 'Gamepad.touchEvents');
+    if (!gp.touchEvents.length) throw fail('NotFoundError', 'gamepad has no touch surface');
+    return gp.touchEvents.map((t) => t.surfaceId);
   },
-  'TouchEvent.altKey': async () => { throw fail('NeedsGesture', 'trusted touch event'); },
-  'TouchEvent.ctrlKey': async () => { throw fail('NeedsGesture', 'trusted touch event'); },
-  'Keyboard.unlock': async () => {
-    need(navigator.keyboard && navigator.keyboard.unlock, 'navigator.keyboard.unlock');
-    let lock;
+  'MediaStream.getTracks': async () => {
+    // A stream the page builds itself (no capture device): a WebAudio destination plus a canvas capture.
+    const ac = new AudioContext();
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 16;
+    c.getContext('2d').fillRect(0, 0, 8, 8);
+    const s = new MediaStream([...ac.createMediaStreamDestination().stream.getTracks(), ...c.captureStream(0).getTracks()]);
     try {
-      lock = await Promise.race([navigator.keyboard.lock(['KeyW', 'KeyA']).then(() => 'resolved'), sleep(1000).then(() => 'pending')]);
-    } catch (e) { lock = {$rejected: e.name}; }
-    const ret = await ser(navigator.keyboard.unlock());
-    return {lock, ret};
+      // track ids are random UUIDs: left out
+      return s.getTracks().map((t) => ({kind: t.kind, label: t.label, enabled: t.enabled, muted: t.muted,
+        readyState: t.readyState, contentHint: t.contentHint}));
+    } finally { s.getTracks().forEach((t) => t.stop()); await ac.close(); }
   },
-  'HTMLObjectElement.checkValidity': async () => {
-    const f = document.createElement('form');
-    const o = document.createElement('object');
-    f.appendChild(o);
-    document.getElementById('stage').appendChild(f);
-    try { return [o.checkValidity(), o.willValidate]; } finally { f.remove(); }
+  'GamepadHapticActuator.effects': async () => {
+    const gp = [...navigator.getGamepads()].find((g) => g && g.vibrationActuator);
+    if (!gp) throw fail('NotFoundError', 'no gamepad with a vibration actuator');
+    return gp.vibrationActuator.effects;
   },
-  'HTMLObjectElement.reportValidity': async () => {
-    const o = document.createElement('object');
-    o.data = 'pop.html';
-    o.type = 'text/html';
-    document.getElementById('stage').appendChild(o);
-    try { return o.reportValidity(); } finally { o.remove(); }
+  'AudioBuffer.copyToChannel': async () => {
+    const b = new AudioBuffer({numberOfChannels: 1, length: 8, sampleRate: 44100});
+    const ret = await ser(b.copyToChannel(new Float32Array([0.5, -0.25, 0.125]), 0, 2));
+    return {ret, data: Array.from(b.getChannelData(0))};
   },
-  'HTMLOutputElement.willValidate': async () => {
-    const host = d3_mount('<form><output name="o">1</output></form>');
-    try { return host.querySelector('output').willValidate; } finally { host.remove(); }
+  'ServiceWorker.scriptURL': async () => {
+    need(navigator.serviceWorker, 'navigator.serviceWorker');
+    await navigator.serviceWorker.register('sw.js');
+    const reg = await navigator.serviceWorker.ready;
+    const u = new URL(reg.active.scriptURL);
+    // The origin's port is the harness's, not the API's: report the path and whether it is this origin.
+    return {sameOrigin: u.origin === location.origin, pathname: u.pathname, search: u.search};
   },
-  'RTCRtpReceiver.rtcpTransport': async () => {
-    const pc = new RTCPeerConnection();
+  'HTMLIFrameElement.marginHeight': async () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<iframe marginheight="7" srcdoc="x"></iframe>';
+    return host.firstElementChild.marginHeight;
+  },
+  'HTMLIFrameElement.marginWidth': async () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<iframe marginwidth="7" style="display:none"></iframe>';
+    document.getElementById('stage').appendChild(host);
+    try { return host.firstElementChild.marginWidth; } finally { host.remove(); }
+  },
+  'SharedStorageWorklet.addModule': async () => {
+    need(window.sharedStorage && window.sharedStorage.worklet, 'sharedStorage.worklet');
+    const url = URL.createObjectURL(new Blob(["register('d2-op', class { async run() { return 0; } });"], {type: 'text/javascript'}));
+    try { return await window.sharedStorage.worklet.addModule(url); } finally { URL.revokeObjectURL(url); }
+  },
+  'HandwritingDrawing.getPrediction': async () => {
+    need(navigator.createHandwritingRecognizer, 'navigator.createHandwritingRecognizer');
+    const rec = await navigator.createHandwritingRecognizer({languages: ['en']});
     try {
-      const t = pc.addTransceiver('audio');
-      await pc.setLocalDescription(await pc.createOffer());
-      return t.receiver.rtcpTransport;
-    } finally { pc.close(); }
-  },
-  'Storage.removeItem': async () => {
-    localStorage.setItem('d1-probe', 'v');
-    const ret = await ser(localStorage.removeItem('d1-probe'));
-    return {ret, after: localStorage.getItem('d1-probe')};
-  },
-  'WebGL2RenderingContextWebGPU.getActiveUniforms': async () => {
-    need(window.WebGL2RenderingContextWebGPU, 'WebGL2RenderingContextWebGPU');
-    const g = document.createElement('canvas').getContext('webgl2');
-    if (!(g instanceof WebGL2RenderingContextWebGPU)) throw fail('NotSupportedError', 'webgl2 context is not WebGL-on-WebGPU');
-    return null;
-  },
-  'WebGL2RenderingContextWebGPU.getBufferParameter': async () => {
-    const g = d4_glWebGPU();
-    const b = g.createBuffer();
-    g.bindBuffer(g.ARRAY_BUFFER, b);
-    g.bufferData(g.ARRAY_BUFFER, 64, g.STATIC_DRAW);
-    return {size: g.getBufferParameter(g.ARRAY_BUFFER, g.BUFFER_SIZE), usage: g.getBufferParameter(g.ARRAY_BUFFER, g.BUFFER_USAGE)};
-  },
-  'WebGL2RenderingContextWebGPU.getIndexedParameter': async () => {
-    const g = d1_webgpuGL();
-    const b = g.createBuffer();
-    g.bindBuffer(g.UNIFORM_BUFFER, b);
-    g.bufferData(g.UNIFORM_BUFFER, 1024, g.STATIC_DRAW);
-    g.bindBufferRange(g.UNIFORM_BUFFER, 1, b, 256, 128);
-    return {binding: g.getIndexedParameter(g.UNIFORM_BUFFER_BINDING, 1) === b,
-      start: g.getIndexedParameter(g.UNIFORM_BUFFER_START, 1), size: g.getIndexedParameter(g.UNIFORM_BUFFER_SIZE, 1)};
-  },
-  'WebGL2RenderingContextWebGPU.getSamplerParameter': async () => {
-    const g = d2_webgl2OnWebGPU();
-    const s = g.createSampler();
-    g.samplerParameteri(s, g.TEXTURE_MIN_FILTER, g.NEAREST);
-    const out = {};
-    for (const n of ['TEXTURE_MAG_FILTER', 'TEXTURE_MIN_FILTER', 'TEXTURE_WRAP_S', 'TEXTURE_COMPARE_MODE', 'TEXTURE_MAX_LOD']) out[n] = g.getSamplerParameter(s, g[n]);
-    return out;
-  },
-  'WebGL2RenderingContextWebGPU.getUniform': async () => {
-    need(window.WebGL2RenderingContextWebGPU, 'WebGL2RenderingContextWebGPU');
-    const g = document.createElement('canvas').getContext('webgl2');
-    if (!(g instanceof WebGL2RenderingContextWebGPU)) throw fail('NotSupportedError', 'webgl2 context is not WebGL-on-WebGPU');
-    return null;
-  },
-  'WebGL2RenderingContextWebGPU.getUniformBlockIndex': async () => {
-    const g = d4_glWebGPU();
-    const p = d4_program(g, D4_VS3, D4_FS3);
-    return {Blk: g.getUniformBlockIndex(p, 'Blk'), missing: g.getUniformBlockIndex(p, 'Missing')};
+      const drawing = rec.startDrawing({recognitionType: 'text', inputType: 'mouse'});
+      const s1 = new HandwritingStroke();  // a vertical bar: "l"
+      for (let i = 0; i <= 10; i++) s1.addPoint({x: 10, y: 10 + 4 * i, t: 10 * i});
+      const s2 = new HandwritingStroke();  // a circle: "o"
+      for (let i = 0; i <= 16; i++) s2.addPoint({x: 40 + 10 * Math.cos(i * Math.PI / 8), y: 40 + 10 * Math.sin(i * Math.PI / 8), t: 200 + 10 * i});
+      drawing.addStroke(s1);
+      drawing.addStroke(s2);
+      const preds = await drawing.getPrediction();
+      return preds.map((p) => ({text: p.text, segmentationResult: p.segmentationResult}));
+    } finally { rec.finish(); }
   },
 };

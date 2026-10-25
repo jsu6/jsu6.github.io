@@ -21,8 +21,8 @@ values differ between devices. Nothing is sent by the page itself.</p>
 <h2>How to take part</h2>
 <ol>
 <li>Optional, before running: if you have a gamepad, press one of its buttons.</li>
-<li>Click <b>Run all</b>. It takes up to a few minutes; keep this tab in front. When asked, scroll the mouse wheel
-or touch the grey box, and allow the test window to open.</li>
+<li>Click <b>Run all</b>. It takes up to a few minutes; keep this tab in front, and allow the test window to
+open.</li>
 <li>Click <b>Copy results</b> and paste the text into a message to us. Running again later, or in another browser,
 helps too.</li>
 </ol>
@@ -31,16 +31,14 @@ helps too.</li>
 <p><button class="primary" id="run">Run all</button>
 <button id="copy" disabled>Copy results</button>
 <span id="status" class="muted"></span></p>
-<div id="box" class="inputbox" hidden>Scroll the mouse wheel over this box, or touch it (10 s)</div>
 <div id="stage"></div>
 <textarea id="out" readonly hidden></textarea>
 <div id="table"></div>
 
 <h2>The code</h2>
 <p class="muted"><a href="probes.js">probes.js</a> holds the <span class="n"></span> probes, copied unchanged from the lab page with the
-helpers they call. The script at the bottom of this page runs them. Seven probes the lab could not run, because they
-need a person (a popup opened by a click; a wheel or touch event), are replaced there by versions that use your
-click or input. The lab column is the verdict from out/experiments/3.4/verdicts.csv (TP: changed with one setting
+helpers they call. The script at the bottom of this page runs them. Four probes the lab could not run, because they
+need a popup opened by a click, are replaced there by versions that use your click. The lab column is the verdict from out/experiments/3.4/verdicts.csv (TP: changed with one setting
 and stable on reload). Left out, because a page reads them only after a permission, a chooser or a picker:
 <span id="leftout"></span>. The lab ran Chromium 150
 with experimental web platform features on, so in a stock browser some probes report NotExposed; that is a
@@ -64,32 +62,11 @@ async function popupProbe(name, args) {
   await sleep(400);
   return [popup.outerWidth, popup.outerHeight, popup.screenX, popup.screenY];
 }
+const POPUP = ['Window.resizeTo', 'Window.resizeBy', 'Window.moveTo', 'Window.moveBy'];
 PROBES['Window.resizeTo'] = () => popupProbe('resizeTo', [100000, 100000]);
 PROBES['Window.resizeBy'] = () => popupProbe('resizeBy', [-100000, -100000]);
 PROBES['Window.moveTo'] = () => popupProbe('moveTo', [100000, 100000]);
 PROBES['Window.moveBy'] = () => popupProbe('moveBy', [-100000, -100000]);
-
-// WheelEvent.momentum and TouchEvent.altKey/ctrlKey are read on a trusted event the visitor makes on the box.
-const inputEvent = once(() => new Promise((res, rej) => {
-  const box = $('box');
-  box.hidden = false;
-  const done = (e) => { box.hidden = true; res(e); };
-  box.addEventListener('wheel', done, {once: true, passive: true});
-  box.addEventListener('touchstart', done, {once: true, passive: true});
-  setTimeout(() => { box.hidden = true; rej(fail('NoInput', 'no wheel or touch event in 10 s')); }, 10000);
-}));
-PROBES['WheelEvent.momentum'] = async () => {
-  const e = await inputEvent();
-  if (!(e instanceof WheelEvent)) throw fail('NoInput', 'touch, not wheel');
-  return e.momentum;
-};
-for (const k of ['altKey', 'ctrlKey']) {
-  PROBES['TouchEvent.' + k] = async () => {
-    const e = await inputEvent();
-    if (!(window.TouchEvent && e instanceof TouchEvent)) throw fail('NoInput', 'wheel, not touch');
-    return e[k];
-  };
-}
 
 // ---- runner ----------------------------------------------------------------------------------------------
 const results = {};
@@ -134,14 +111,15 @@ async function runAll() {
   $('copy').disabled = true;
   popup = window.open('about:blank', 'pocrq3', 'width=320,height=240,left=40,top=40');  // first: needs this click
   const order = Object.keys(PROBES);
+  const lastPopup = order.filter((k) => POPUP.includes(k)).pop();  // close the popup after its last probe
   let n = 0;
   for (const api of order) {
     $('status').textContent = `${++n} / ${order.length}: ${api}`;
     await runOne(api);
-    if (api === 'Window.moveBy' && popup && !popup.closed) popup.close();  // the last popup probe (rank 6)
+    if (api === lastPopup && popup && !popup.closed) popup.close();
     render();
   }
-  rec = {page: 'pocrq3', version: '2026-10-24b', time: new Date().toISOString(), ua: navigator.userAgent,
+  rec = {page: 'pocrq3', version: '2026-10-25', time: new Date().toISOString(), ua: navigator.userAgent,
     brands: navigator.userAgentData ? navigator.userAgentData.brands : null, env: await environment(),
     n: order.length, results};
   $('status').textContent = 'done: copy the results';
